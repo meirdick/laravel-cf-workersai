@@ -1,0 +1,50 @@
+{
+    "name": "meirdick/laravel-cf-workersai",
+    "description": "Cloudflare Workers AI provider for Laravel AI SDK with AI Gateway support.",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway"],
+    "authors": [
+        {
+            "name": "Meir Dick",
+            "email": "mdick85@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "laravel/ai": "^0.7"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "pestphp/pest": "^3.0",
+        "pestphp/pest-plugin-laravel": "^3.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Meirdick\\WorkersAi\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Meirdick\\WorkersAi\\WorkersAiServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "scripts": {
+        "test": "pest"
+    }
+}

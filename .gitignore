@@ -1,0 +1,14 @@
+/vendor/
+/build/
+/.phpunit.cache/
+.phpunit.result.cache
+composer.lock
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*.bak
+.env
+.env.local
+.env.testing
