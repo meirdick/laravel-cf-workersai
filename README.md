@@ -30,13 +30,22 @@ Add a `workers-ai` provider to `config/ai.php`:
 ```php
 'providers' => [
     'workers-ai' => [
-        'api_key'    => env('CLOUDFLARE_AI_API_KEY'),
-        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
-        'gateway'    => env('CLOUDFLARE_AI_GATEWAY'), // optional
-        // 'url'     => env('CLOUDFLARE_AI_URL'),     // optional escape hatch
+        'api_key'             => env('CLOUDFLARE_AI_API_KEY'),
+        'account_id'          => env('CLOUDFLARE_ACCOUNT_ID'),
+        'gateway'             => env('CLOUDFLARE_AI_GATEWAY'),  // optional
+        // 'url'              => env('CLOUDFLARE_AI_URL'),      // optional escape hatch
+        // 'default_max_tokens' => 4096,                        // override the package default
     ],
 ],
 ```
+
+### `default_max_tokens`
+
+Cloudflare's `/v1/chat/completions` defaults to **256 tokens** when `max_completion_tokens` is omitted — far too small for any non-trivial structured output, which then arrives mid-JSON with a misreported `finish_reason: "stop"`. The package sends `4096` by default to defuse this. Override the value per-provider, or set it to `null` to fall back to Cloudflare's endpoint default. Per-call `#[MaxTokens(...)]` (or `TextGenerationOptions::$maxTokens`) always wins.
+
+The package also normalizes Cloudflare's misreported `stop`-at-budget into `FinishReason::Length` so laravel/ai's length-aware retry primitives can react to truncated completions.
+
+### Endpoint resolution
 
 There are three ways to configure the endpoint, in priority order:
 

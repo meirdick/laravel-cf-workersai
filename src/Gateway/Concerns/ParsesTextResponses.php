@@ -110,7 +110,11 @@ trait ParsesTextResponses
         // is "stop" rather than omitting the key.
         $rawToolCalls = ToolCallList::fromResponse($data);
         $usage = $this->extractUsage($data);
-        $finishReason = $this->extractFinishReason($choice);
+        $finishReason = $this->extractFinishReason(
+            $choice,
+            $usage->completionTokens,
+            $this->resolveMaxTokens($provider, $options),
+        );
 
         $mappedToolCalls = array_map(fn (array $toolCall) => new ToolCall(
             $toolCall['id'] ?? '',
@@ -342,10 +346,29 @@ trait ParsesTextResponses
 
     /**
      * Extract and map the finish reason from the response.
+     *
+     * Cloudflare's `/v1/chat/completions` misreports truncated completions as
+     * `finish_reason: "stop"` instead of `"length"`. When we know the requested
+     * max-token budget and the completion exhausted it, normalize to `Length`
+     * so laravel/ai's length-aware retry/continuation primitives can fire.
+     * Without this, agents quietly receive truncated JSON and the SDK has no
+     * signal that anything was wrong.
      */
-    protected function extractFinishReason(array $choice): FinishReason
-    {
-        return match ($choice['finish_reason'] ?? '') {
+    protected function extractFinishReason(
+        array $choice,
+        ?int $completionTokens = null,
+        ?int $requestedMaxTokens = null,
+    ): FinishReason {
+        $raw = $choice['finish_reason'] ?? '';
+
+        if ($raw === 'stop'
+            && ! is_null($requestedMaxTokens)
+            && ! is_null($completionTokens)
+            && $completionTokens >= $requestedMaxTokens) {
+            return FinishReason::Length;
+        }
+
+        return match ($raw) {
             'stop' => FinishReason::Stop,
             'tool_calls' => FinishReason::ToolCalls,
             'length' => FinishReason::Length,

@@ -7,6 +7,7 @@ use Laravel\Ai\Attributes\Strict;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
 use Laravel\Ai\Providers\Provider;
+use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 trait BuildsTextRequests
 {
@@ -71,8 +72,10 @@ trait BuildsTextRequests
             );
         }
 
-        if (! is_null($options?->maxTokens)) {
-            $body['max_completion_tokens'] = $options->maxTokens;
+        $resolvedMaxTokens = $this->resolveMaxTokens($provider, $options);
+
+        if (! is_null($resolvedMaxTokens)) {
+            $body['max_completion_tokens'] = $resolvedMaxTokens;
         }
 
         $body = array_merge($body, Arr::whereNotNull([
@@ -87,6 +90,28 @@ trait BuildsTextRequests
         }
 
         return $body;
+    }
+
+    /**
+     * Resolve the effective `max_completion_tokens` for a request.
+     *
+     * Precedence: per-call `TextGenerationOptions::$maxTokens` → provider
+     * config (`default_max_tokens`) → Cloudflare's endpoint default (returned
+     * as `null` so the field is omitted). The 4096-token fallback exists in
+     * `WorkersAiProvider::defaultMaxTokens()` to defuse Cloudflare's 256-token
+     * `/v1/chat/completions` default, which silently truncates structured
+     * output. Returning `null` here is intentional and lets callers opt
+     * out of the package default by setting `default_max_tokens => null`.
+     */
+    protected function resolveMaxTokens(Provider $provider, ?TextGenerationOptions $options): ?int
+    {
+        if (! is_null($options?->maxTokens)) {
+            return $options->maxTokens;
+        }
+
+        return $provider instanceof WorkersAiProvider
+            ? $provider->defaultMaxTokens()
+            : null;
     }
 
     /**

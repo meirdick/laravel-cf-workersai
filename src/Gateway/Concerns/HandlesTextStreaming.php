@@ -227,10 +227,16 @@ trait HandlesTextStreaming
             return;
         }
 
+        $resolvedUsage = $usage ?? new Usage(0, 0);
+
         yield (new StreamEnd(
             $this->generateEventId(),
-            $this->extractFinishReason(['finish_reason' => $finishReason ?? ''])->value,
-            $usage ?? new Usage(0, 0),
+            $this->extractFinishReason(
+                ['finish_reason' => $finishReason ?? ''],
+                $resolvedUsage->completionTokens,
+                $this->resolveMaxTokens($provider, $options),
+            )->value,
+            $resolvedUsage,
             time(),
         ))->withInvocationId($invocationId);
     }

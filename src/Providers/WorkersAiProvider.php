@@ -81,4 +81,26 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     {
         return (int) ($this->config['models']['embeddings']['dimensions'] ?? 1024);
     }
+
+    /**
+     * Default `max_completion_tokens` to send when the agent (or the call's
+     * `TextGenerationOptions`) doesn't set one.
+     *
+     * Cloudflare's `/v1/chat/completions` defaults to **256 tokens** when the
+     * field is omitted — far too small for any non-trivial structured output,
+     * which truncates mid-JSON and arrives with a misreported
+     * `finish_reason: "stop"`. The package ships 4096 as a sane default;
+     * users can set `default_max_tokens` in their provider config block
+     * (or `null` to fall back to Cloudflare's default).
+     */
+    public function defaultMaxTokens(): ?int
+    {
+        if (! array_key_exists('default_max_tokens', $this->config)) {
+            return 4096;
+        }
+
+        $value = $this->config['default_max_tokens'];
+
+        return is_null($value) ? null : (int) $value;
+    }
 }

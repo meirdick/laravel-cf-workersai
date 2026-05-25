@@ -68,7 +68,11 @@ test('workersai omits top_p when not set', function () {
     });
 });
 
-test('workersai excludes max_completion_tokens when not set', function () {
+test('workersai sends the package default max_completion_tokens when caller does not set one', function () {
+    // Cloudflare's /v1/chat/completions defaults to 256 tokens when the field
+    // is omitted — too small for any non-trivial structured output, which then
+    // arrives truncated with a misreported finish_reason: "stop". The package
+    // defaults to 4096 to defuse this footgun.
     Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
 
     agent()->prompt('Hello', provider: 'workersai');
@@ -76,8 +80,59 @@ test('workersai excludes max_completion_tokens when not set', function () {
     Http::assertSent(function (Request $r) {
         $body = json_decode($r->body(), true);
 
-        return ! array_key_exists('max_completion_tokens', $body)
+        return ($body['max_completion_tokens'] ?? null) === 4096
             && ! array_key_exists('max_tokens', $body);
+    });
+});
+
+test('workersai default_max_tokens config overrides the package default', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'default_max_tokens' => 8192,
+    ]]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai');
+
+    Http::assertSent(function (Request $r) {
+        $body = json_decode($r->body(), true);
+
+        return ($body['max_completion_tokens'] ?? null) === 8192;
+    });
+});
+
+test('workersai default_max_tokens set to null omits the field entirely', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'default_max_tokens' => null,
+    ]]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai');
+
+    Http::assertSent(function (Request $r) {
+        $body = json_decode($r->body(), true);
+
+        return ! array_key_exists('max_completion_tokens', $body);
+    });
+});
+
+test('per-call MaxTokens attribute takes precedence over default_max_tokens config', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'default_max_tokens' => 1024,
+    ]]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    (new \Tests\Fixtures\Agents\AttributeAgent)->prompt('Hello', provider: 'workersai');
+
+    Http::assertSent(function (Request $r) {
+        $body = json_decode($r->body(), true);
+
+        return ($body['max_completion_tokens'] ?? null) === 4096;
     });
 });
 
