@@ -44,6 +44,7 @@ trait HandlesTextStreaming
         ?int $maxSteps = null,
         array $priorChatMessages = [],
         ?int $timeout = null,
+        ?Usage $accumulatedUsage = null,
     ): Generator {
         $maxSteps ??= $options?->maxSteps;
 
@@ -82,7 +83,7 @@ trait HandlesTextStreaming
 
             if (! $choice) {
                 if (isset($data['usage'])) {
-                    $usage = $this->buildStreamUsage($data['usage']);
+                    $usage = $this->resolveStreamUsage($usage, $data['usage']);
                 }
 
                 continue;
@@ -175,7 +176,7 @@ trait HandlesTextStreaming
             }
 
             if (isset($data['usage'])) {
-                $usage = $this->buildStreamUsage($data['usage']);
+                $usage = $this->resolveStreamUsage($usage, $data['usage']);
             }
         }
 
@@ -222,23 +223,58 @@ trait HandlesTextStreaming
                 $priorChatMessages,
                 $timeout,
                 $currentReasoning,
+                ($accumulatedUsage ?? new Usage(0, 0))->add($usage ?? new Usage(0, 0)),
             );
 
             return;
         }
 
-        $resolvedUsage = $usage ?? new Usage(0, 0);
+        $stepUsage = $usage ?? new Usage(0, 0);
+
+        // The final StreamEnd carries usage summed across every tool-call
+        // step, matching laravel/ai's direction for streamed multi-step
+        // usage (Bedrock-style accumulation). The truncation heuristic still
+        // judges only the *current* step's completion tokens — a summed
+        // count would cross the per-request budget and misreport Length.
+        $resolvedUsage = ($accumulatedUsage ?? new Usage(0, 0))->add($stepUsage);
 
         yield (new StreamEnd(
             $this->generateEventId(),
             $this->extractFinishReason(
                 ['finish_reason' => $finishReason ?? ''],
-                $resolvedUsage->completionTokens,
+                $stepUsage->completionTokens,
                 $this->resolveMaxTokens($provider, $options),
             )->value,
             $resolvedUsage,
             time(),
         ))->withInvocationId($invocationId);
+    }
+
+    /**
+     * Resolve the stream's usage from a `usage` chunk without letting empty
+     * chunks clobber real counts.
+     *
+     * The live Workers AI endpoint reports usage on the finish chunk, then
+     * emits a trailing usage-only chunk whose counts are all zero. A naive
+     * last-write-wins assignment erases the real numbers, so an all-zero
+     * payload only sticks when no usage has been captured yet.
+     *
+     * @param  array<string, mixed>  $usagePayload
+     */
+    protected function resolveStreamUsage(?Usage $current, array $usagePayload): Usage
+    {
+        $incoming = $this->buildStreamUsage($usagePayload);
+
+        if ($current === null) {
+            return $incoming;
+        }
+
+        $incomingIsEmpty = $incoming->promptTokens === 0
+            && $incoming->completionTokens === 0
+            && $incoming->reasoningTokens === 0
+            && $incoming->cacheReadInputTokens === 0;
+
+        return $incomingIsEmpty ? $current : $incoming;
     }
 
     /**
@@ -277,6 +313,7 @@ trait HandlesTextStreaming
         array $priorChatMessages,
         ?int $timeout = null,
         string $currentReasoning = '',
+        ?Usage $accumulatedUsage = null,
     ): Generator {
         $toolResults = [];
 
@@ -350,7 +387,7 @@ trait HandlesTextStreaming
             // helper the initial-turn and non-streaming follow-up paths use —
             // single source of truth across the three sites that build chat
             // request bodies.
-            $body = $this->finalizeChatBody(
+            $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
                 [
                     'model' => $model,
                     'messages' => $chatMessages,
@@ -361,7 +398,7 @@ trait HandlesTextStreaming
                 tools: $tools,
                 schema: $schema,
                 options: $options,
-            );
+            ));
 
             $response = $this->withErrorHandling(
                 $provider->name(),
@@ -384,12 +421,13 @@ trait HandlesTextStreaming
                 $maxSteps,
                 $updatedPriorMessages,
                 $timeout,
+                $accumulatedUsage,
             );
         } else {
             yield (new StreamEnd(
                 $this->generateEventId(),
                 'stop',
-                new Usage(0, 0),
+                $accumulatedUsage ?? new Usage(0, 0),
                 time(),
             ))->withInvocationId($invocationId);
         }

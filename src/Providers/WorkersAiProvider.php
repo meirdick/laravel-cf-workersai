@@ -9,6 +9,7 @@ use Laravel\Ai\Contracts\Gateway\EmbeddingGateway;
 use Laravel\Ai\Contracts\Gateway\TextGateway;
 use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
 use Laravel\Ai\Contracts\Providers\TextProvider;
+use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Providers\Provider;
 use Meirdick\WorkersAi\Gateway\WorkersAiGateway;
 
@@ -35,6 +36,41 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     public function __construct(protected array $config, protected Dispatcher $events)
     {
         //
+    }
+
+    /**
+     * Get the credentials for the underlying AI provider.
+     *
+     * Accepts `key` (the laravel/ai convention used by every first-party
+     * provider) and falls back to `api_key` (the shape this package's own
+     * docs showed through v0.2.0). The base Provider reads `key` unguarded —
+     * without this override, an `api_key`-only config crashes with an
+     * undefined-array-key error instead of an actionable message.
+     */
+    public function providerCredentials(): array
+    {
+        $key = $this->config['key'] ?? $this->config['api_key'] ?? null;
+
+        if (! is_string($key) || trim($key) === '') {
+            throw new AiException(
+                'Workers AI requires an API token. Set `key` in your workers-ai provider '
+                ."config — e.g. `'key' => env('CLOUDFLARE_AI_API_TOKEN')` — using a Cloudflare "
+                .'API token with the `Workers AI: Read` permission.'
+            );
+        }
+
+        return ['key' => $key];
+    }
+
+    /**
+     * Get the provider connection configuration other than the credentials.
+     *
+     * Also strips the legacy `api_key` alias so it doesn't leak into
+     * URL/option resolution alongside the canonical `key`.
+     */
+    public function additionalConfiguration(): array
+    {
+        return array_diff_key(parent::additionalConfiguration(), array_flip(['api_key']));
     }
 
     /**
@@ -69,7 +105,7 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
 
     public function smartestTextModel(): string
     {
-        return $this->config['models']['text']['smartest'] ?? '@cf/moonshotai/kimi-k2.5';
+        return $this->config['models']['text']['smartest'] ?? '@cf/moonshotai/kimi-k2.6';
     }
 
     public function defaultEmbeddingsModel(): string

@@ -33,7 +33,17 @@ final class RetryPolicy
             500,
             function (Throwable $exception): bool {
                 if ($exception instanceof ConnectionException) {
-                    return true;
+                    // cURL 28 during transfer ("Operation timed out after Xms
+                    // with Y bytes received") means the request ran and was cut
+                    // by the caller's timeout. Retrying re-runs a request
+                    // expected to take just as long — three attempts turn a
+                    // 60s timeout into ~3 minutes of wall time before failing.
+                    // Fail fast so the configured timeout means what it says.
+                    // Connect-phase failures ("Connection timed out after",
+                    // "Failed to connect", "Could not resolve host") remain
+                    // retryable — those are the transient blips the policy
+                    // exists for.
+                    return ! str_contains($exception->getMessage(), 'Operation timed out');
                 }
 
                 if ($exception instanceof RequestException) {

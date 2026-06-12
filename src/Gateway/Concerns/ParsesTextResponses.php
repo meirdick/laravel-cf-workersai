@@ -272,13 +272,13 @@ trait ParsesTextResponses
         // finalizeChatBody (in BuildsTextRequests) appends tools, response_format,
         // sampling options, and providerOptions to the body. Same helper the
         // initial-turn buildTextRequestBody uses — single source of truth.
-        $body = $this->finalizeChatBody(
+        $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
             ['model' => $model, 'messages' => $chatMessages],
             provider: $provider,
             tools: $tools,
             schema: $schema,
             options: $options,
-        );
+        ));
 
         $response = $this->withErrorHandling(
             $provider->name(),

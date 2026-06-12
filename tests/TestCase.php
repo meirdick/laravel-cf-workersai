@@ -22,13 +22,13 @@ abstract class TestCase extends BaseTestCase
     {
         $app['config']->set('ai.providers.workers-ai', [
             'driver' => 'workers-ai',
-            'api_key' => 'test-api-key',
+            'key' => 'test-api-key',
             'account_id' => 'test-account-id',
         ]);
 
         $app['config']->set('ai.providers.workersai', [
             'driver' => 'workersai',
-            'api_key' => 'test-api-key',
+            'key' => 'test-api-key',
             'account_id' => 'test-account-id',
         ]);
     }

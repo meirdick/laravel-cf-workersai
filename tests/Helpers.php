@@ -64,3 +64,33 @@ function fakeWorkersAiToolCallResponse(): array
         ],
     ];
 }
+
+/*
+ * Live E2E helpers (tests/Integration). Centralized here so every
+ * integration file can use them regardless of which file Pest loads first.
+ */
+function e2eCredentials(): ?array
+{
+    $token = getenv('WORKERS_AI_E2E_TOKEN');
+    $account = getenv('WORKERS_AI_E2E_ACCOUNT');
+
+    return ($token && $account) ? ['token' => $token, 'account' => $account] : null;
+}
+
+function configureLiveProvider(array $overrides = []): void
+{
+    $creds = e2eCredentials();
+
+    // The skip() closures run after beforeEach — bail quietly so missing
+    // credentials surface as a skip, not a setup crash.
+    if ($creds === null) {
+        return;
+    }
+
+    config(['ai.providers.workers-ai' => [
+        'driver' => 'workers-ai',
+        'key' => $creds['token'],
+        'account_id' => $creds['account'],
+        ...$overrides,
+    ]]);
+}

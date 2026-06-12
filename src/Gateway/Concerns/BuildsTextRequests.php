@@ -93,6 +93,31 @@ trait BuildsTextRequests
     }
 
     /**
+     * Relax a forced `tool_choice` on tool-result follow-up turns.
+     *
+     * `tool_choice: required` (or a forced specific function) applies per
+     * request — re-sending it on the follow-up turn after tool results
+     * forces the model to call a tool *again* instead of producing the
+     * final answer, looping until max-steps and returning empty text.
+     * Verified live against Workers AI (llama-4-scout, 2026-06-11). The
+     * follow-up turn therefore downgrades a forced choice to `auto`;
+     * `none` is preserved since it cannot loop.
+     *
+     * @param  array<string, mixed>  $body
+     * @return array<string, mixed>
+     */
+    protected function relaxForcedToolChoice(array $body): array
+    {
+        $choice = $body['tool_choice'] ?? null;
+
+        if ($choice === 'required' || is_array($choice)) {
+            $body['tool_choice'] = 'auto';
+        }
+
+        return $body;
+    }
+
+    /**
      * Resolve the effective `max_completion_tokens` for a request.
      *
      * Precedence: per-call `TextGenerationOptions::$maxTokens` → provider

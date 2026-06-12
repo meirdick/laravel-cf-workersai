@@ -176,6 +176,22 @@ class WorkersAiGateway implements EmbeddingGateway, TextGateway
     }
 
     /**
+     * The status codes that indicate the provider is overloaded.
+     *
+     * Cloudflare fronts Workers AI with its edge network, so transient
+     * capacity problems surface as 502/504 from the gateway layer as often
+     * as 503 from the model runner. RetryPolicy already retries these; once
+     * retries are exhausted, mapping them to ProviderOverloadedException
+     * lets laravel/ai's failover move to the next provider in the list.
+     *
+     * @return list<int>
+     */
+    protected function overloadedStatusCodes(): array
+    {
+        return [502, 503, 504];
+    }
+
+    /**
      * Strip reserved keys from caller-supplied embedding provider options.
      * `model` and `input` are owned by the gateway — letting callers override
      * them would break the contract the public method built.

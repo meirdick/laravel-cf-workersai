@@ -175,7 +175,7 @@ test('non-streaming replays reasoning_content into the tool-call follow-up reque
             Http::response([
                 'id' => 'chatcmpl-r1',
                 'object' => 'chat.completion',
-                'model' => '@cf/moonshotai/kimi-k2.5',
+                'model' => '@cf/moonshotai/kimi-k2.6',
                 'choices' => [[
                     'index' => 0,
                     'message' => [

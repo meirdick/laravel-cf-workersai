@@ -45,3 +45,25 @@ test('max steps limits tool call depth', function () {
 
     expect(count($recorded))->toBeLessThanOrEqual(3);
 });
+
+test('forced tool_choice relaxes to auto on the follow-up turn', function () {
+    Http::fake([
+        'api.cloudflare.com/*' => Http::sequence([
+            Http::response(fakeWorkersAiToolCallResponse()),
+            Http::response(workersAiTextResponse('The number is 72019')),
+        ]),
+    ]);
+
+    $response = (new Tests\Fixtures\Agents\RequiredToolAgent)->prompt(
+        'Generate a number',
+        provider: 'workersai',
+    );
+
+    expect($response->text)->toBe('The number is 72019');
+
+    $recorded = Http::recorded();
+
+    expect($recorded)->toHaveCount(2)
+        ->and($recorded[0][0]->data()['tool_choice'])->toBe('required')
+        ->and($recorded[1][0]->data()['tool_choice'])->toBe('auto');
+});

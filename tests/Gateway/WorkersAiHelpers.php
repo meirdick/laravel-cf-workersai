@@ -118,7 +118,7 @@ trait WorkersAiHelpers
         return [
             'id' => 'chatcmpl-123',
             'object' => 'chat.completion.chunk',
-            'model' => '@cf/moonshotai/kimi-k2.5',
+            'model' => '@cf/moonshotai/kimi-k2.6',
             'choices' => [[
                 'index' => 0,
                 'delta' => [

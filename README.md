@@ -7,13 +7,15 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 - Reasoning content replay across tool-call turns.
 - `#[Strict]` JSON schema opt-in.
 - Provider options pass-through.
-- Sub-agent tools.
+- Sub-agent tools, and MCP tools on laravel/ai `^0.8`.
+- Streamed usage summed across tool-call steps.
 - Retry policy and AI Gateway session affinity.
+- Failover-ready: 429/402/502/503/504 map to laravel/ai's failoverable exceptions.
 
 ## Requirements
 
 - PHP `^8.3`
-- `laravel/ai ^0.7`
+- `laravel/ai ^0.7 || ^0.8`
 
 ## Installation
 
@@ -30,7 +32,7 @@ Add a `workers-ai` provider to `config/ai.php`:
 ```php
 'providers' => [
     'workers-ai' => [
-        'api_key'             => env('CLOUDFLARE_AI_API_KEY'),
+        'key'                 => env('CLOUDFLARE_AI_API_TOKEN'),
         'account_id'          => env('CLOUDFLARE_ACCOUNT_ID'),
         'gateway'             => env('CLOUDFLARE_AI_GATEWAY'),  // optional
         // 'url'              => env('CLOUDFLARE_AI_URL'),      // optional escape hatch
@@ -38,6 +40,8 @@ Add a `workers-ai` provider to `config/ai.php`:
     ],
 ],
 ```
+
+`key` is a Cloudflare API token with the `Workers AI: Read` permission, matching the credential key name every first-party laravel/ai provider uses. The `api_key` name from earlier releases of this package is still accepted as a fallback.
 
 ### `default_max_tokens`
 
@@ -113,6 +117,36 @@ agent('helper')->withTools([getWeather(...)])->prompt('Weather in Tokyo?', provi
 
 Reasoning content from the tool-call turn is preserved and replayed in the follow-up automatically (`providerContentBlocks`).
 
+### Model choice matters for tool calling
+
+Verified live against the production API (2026-06-11): **`@cf/meta/llama-3.3-70b-instruct-fp8-fast` — the package's default text model — does not emit tool calls** on the `/v1` endpoint; it answers in prose instead. `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` tool-call correctly, but under `tool_choice: auto` open-weight models only *choose* to call a tool some of the time. When the tool must run, force it via provider options:
+
+```php
+public function providerOptions(Lab|string $provider): array
+{
+    // Custom drivers arrive as a plain string, not a Lab enum case.
+    return $provider === 'workers-ai' ? ['tool_choice' => 'required'] : [];
+}
+```
+
+The package automatically relaxes a forced `tool_choice` back to `auto` on tool-result follow-up turns — otherwise the model is forced to call a tool again instead of answering, looping until max-steps with empty text.
+
+## Timeouts
+
+laravel/ai resolves a **60-second timeout** by default. Large models, structured output, and reasoning models on Workers AI can exceed it — observed live: a structured `llama-3.3-70b` request taking 60s+, and `kimi-k2.6` taking 45s on a small prompt. Raise it per agent or per call:
+
+```php
+use Laravel\Ai\Attributes\Timeout;
+
+#[Timeout(120)]
+class ExtractionAgent implements Agent { /* ... */ }
+
+// or per call:
+$agent->prompt('...', provider: 'workers-ai', timeout: 120);
+```
+
+A request that exceeds the timeout fails after a single attempt with a `ConnectionException`. (Before v0.3.0 the retry policy re-ran timed-out requests, turning a 60s timeout into ~3 minutes of wall time before failing.) Connect-phase failures and transient 502/503/504 responses are still retried with backoff.
+
 ## Structured output
 
 ```php
@@ -130,7 +164,7 @@ Set the `gateway` config key to route through Cloudflare AI Gateway. You get fre
 
 ```php
 'workers-ai' => [
-    'api_key'    => env('CLOUDFLARE_AI_API_KEY'),
+    'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
     'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
     'gateway'    => 'my-gateway',
 ],
@@ -154,7 +188,7 @@ The provider can be referenced as `workers-ai` (primary) or `workersai` (alias).
 
 ## Versioning
 
-This package follows [Semantic Versioning](https://semver.org/). Pinned to `laravel/ai ^0.7`.
+This package follows [Semantic Versioning](https://semver.org/). Compatible with `laravel/ai ^0.7 || ^0.8` — the test suite runs against both bounds.
 
 ## License
 
