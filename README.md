@@ -158,6 +158,33 @@ final class TaskAgent extends \Laravel\Ai\Agent {}
 
 When `#[Strict]` is applied, `strict: true` is forwarded to Workers AI's `/compat` endpoint and the generated JSON schema requires all properties.
 
+## Reasoning models
+
+Some Workers AI models (Kimi K2.5/K2.6, QwQ, Gemma) emit a chain of thought before their answer. Following the laravel/ai convention — the same one used to pass Anthropic `thinking` or Gemini `thinkingConfig` — reasoning is controlled through `HasProviderOptions`, not a dedicated attribute. The returned options are merged into the request body verbatim. Kimi uses `chat_template_kwargs.thinking`:
+
+```php
+use Laravel\Ai\Contracts\HasProviderOptions;
+use Laravel\Ai\Enums\Lab;
+
+class AnalysisAgent implements Agent, HasProviderOptions
+{
+    public function providerOptions(Lab|string $provider): array
+    {
+        // Workers AI is a custom driver, so $provider arrives as the string.
+        return $provider === 'workers-ai'
+            ? ['chat_template_kwargs' => ['thinking' => false]]
+            : [];
+    }
+}
+```
+
+**Disabling reasoning** (`thinking => false`) is the right default for structured-output and extraction work: reasoning is incompatible with `response_format` (the model spends its token budget thinking instead of conforming to the schema) and roughly triples latency. Verified live on Kimi K2.6 — structured calls return valid JSON in ~4s with thinking off versus busting both the schema and the 60s timeout with it on.
+
+**Enabling reasoning** (`thinking => true`) suits free-form, latency-tolerant judgment tasks. The package then:
+
+- captures the model's reasoning (under either the `reasoning_content` or the K2.6 `reasoning` field) and replays it across tool-call turns so multi-step tool loops stay coherent;
+- raises `max_completion_tokens` to a **2048 floor** when it would otherwise be lower, so the model isn't starved of answer tokens after reasoning (a small budget returns `content: null` / `finish_reason: "length"`). Pair it with a raised `#[Timeout]` (see above).
+
 ## AI Gateway
 
 Set the `gateway` config key to route through Cloudflare AI Gateway. You get free caching, retries, cost analytics, and request logs in the Cloudflare dashboard.

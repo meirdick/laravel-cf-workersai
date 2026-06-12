@@ -3,6 +3,7 @@
 namespace Meirdick\WorkersAi\Gateway\Concerns;
 
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Attributes\Strict;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
@@ -88,6 +89,54 @@ trait BuildsTextRequests
         if (filled($providerOptions)) {
             $body = array_merge($body, Arr::except($providerOptions, ['session_affinity']));
         }
+
+        return $this->guardThinkingTokenBudget($body);
+    }
+
+    /**
+     * Minimum completion-token budget to grant a request that enabled reasoning.
+     *
+     * Reasoning models emit their chain of thought into the same completion
+     * budget as the answer. With a small budget the model exhausts it on
+     * reasoning and returns `content: null` / `finish_reason: "length"` — a
+     * silent empty response. Verified live against Kimi K2.6 on Workers AI: a
+     * 32-token request produced zero content, and a structured request capped
+     * at 2048 spent the entire budget reasoning. The floor reserves room for
+     * both phases so thinking-enabled calls can still produce an answer.
+     */
+    protected int $thinkingTokenFloor = 2_048;
+
+    /**
+     * Raise the completion-token budget to a floor when reasoning is enabled.
+     *
+     * Workers AI's chat-template reasoning toggle (`chat_template_kwargs.thinking`)
+     * is merged from the agent's provider options. When it is on, a budget below
+     * the floor is bumped up (never down) so the model is not starved of tokens
+     * for the answer after reasoning. Only `=== true` triggers the guard; an
+     * explicit `false` or absence leaves the budget untouched.
+     *
+     * @param  array<string, mixed>  $body
+     * @return array<string, mixed>
+     */
+    protected function guardThinkingTokenBudget(array $body): array
+    {
+        if (data_get($body, 'chat_template_kwargs.thinking') !== true) {
+            return $body;
+        }
+
+        $current = $body['max_completion_tokens'] ?? null;
+
+        if (! is_null($current) && $current >= $this->thinkingTokenFloor) {
+            return $body;
+        }
+
+        Log::warning('Workers AI: raising max_completion_tokens to the reasoning floor.', [
+            'requested' => $current,
+            'floor' => $this->thinkingTokenFloor,
+            'model' => $body['model'] ?? null,
+        ]);
+
+        $body['max_completion_tokens'] = $this->thinkingTokenFloor;
 
         return $body;
     }

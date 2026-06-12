@@ -4,6 +4,19 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-06-12
+
+Hardens reasoning-model support so thinking-capable models (Kimi K2.6, QwQ, Gemma) behave predictably. Reasoning stays controlled through `HasProviderOptions` — the laravel/ai convention for Anthropic `thinking` / Gemini `thinkingConfig` — so there is no new attribute to learn; these are robustness fixes for when it is enabled.
+
+### Added
+
+- **Reasoning-aware completion-token floor.** When an agent enables reasoning (`chat_template_kwargs.thinking => true`) but the resolved `max_completion_tokens` is below `2048`, the budget is raised to that floor (never lowered) so the model isn't starved of answer tokens after spending its budget thinking. Verified live on Kimi K2.6: a tight budget returns `content: null` / `finish_reason: "length"`. A `Log::warning` records each adjustment.
+- **README "Reasoning models" section** documenting the `HasProviderOptions` convention for Workers AI, when to disable reasoning (structured output, extraction) versus enable it (free-form judgment), and the token-floor / timeout pairing.
+
+### Fixed
+
+- **Kimi K2.6 `reasoning` response field is now captured on the non-streaming path.** K2.6 renamed the reasoning field from `reasoning_content` to `reasoning`; Cloudflare's `/compat` layer has surfaced both across model versions. The text-response parser now accepts either and normalizes to the canonical `reasoning_content` block that `MapsMessages` replays on tool-call follow-up turns — so multi-step tool loops with K2.6 keep their chain of thought. The streaming path already handled both fields; this brings the non-streaming path to parity.
+
 ## [0.3.0] - 2026-06-11
 
 laravel/ai `^0.8` support and alignment with the SDK's current conventions. Verified against laravel/ai v0.7.0 (Laravel 12) and v0.8.1 (Laravel 13) — no contract changes between those versions touch this package's surface.

@@ -134,14 +134,22 @@ trait ParsesTextResponses
 
         $steps->push($step);
 
-        // Capture reasoning_content into providerContentBlocks so it round-trips
-        // through the tool-call follow-up. Reasoning models (Kimi K2.5, Gemma 4,
+        // Capture reasoning into providerContentBlocks so it round-trips through
+        // the tool-call follow-up. Reasoning models (Kimi K2.5/K2.6, Gemma 4,
         // QwQ on Workers AI; DeepSeek upstream) lose multi-turn coherence if the
         // thinking that led to the first tool call isn't replayed on the next
         // request. Pattern matches laravel/ai's DeepSeek native gateway.
+        //
+        // Kimi K2.6 renamed the response field from `reasoning_content` to
+        // `reasoning`; Cloudflare's /compat layer has emitted both across model
+        // versions, so accept either and normalize to the canonical
+        // `reasoning_content` key that MapsMessages replays on follow-up turns.
+        // This mirrors the streaming path (HandlesTextStreaming reads
+        // `reasoning_content ?? reasoning`).
         $providerContentBlocks = [];
-        if (filled($message['reasoning_content'] ?? null)) {
-            $providerContentBlocks['reasoning_content'] = $message['reasoning_content'];
+        $reasoning = $message['reasoning_content'] ?? $message['reasoning'] ?? null;
+        if (filled($reasoning)) {
+            $providerContentBlocks['reasoning_content'] = $reasoning;
         }
 
         $assistantMessage = new AssistantMessage($text, collect($mappedToolCalls), $providerContentBlocks);
