@@ -139,4 +139,20 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
 
         return is_null($value) ? null : (int) $value;
     }
+
+    /**
+     * How many times the gateway may re-ask the model for schema-valid
+     * structured output before giving up and returning what it has.
+     *
+     * Workers AI's JSON mode is best-effort — it does not guarantee the
+     * response satisfies the requested schema (a model can omit a required
+     * field or emit an invalid enum). The gateway validates each structured
+     * response and, on failure, feeds the error back and re-asks up to this
+     * many times. Defaults to 2; set `structured_output_retries => 0` in the
+     * provider config to disable.
+     */
+    public function structuredOutputRetries(): int
+    {
+        return max(0, (int) ($this->config['structured_output_retries'] ?? 2));
+    }
 }

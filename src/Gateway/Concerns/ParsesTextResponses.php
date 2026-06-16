@@ -6,6 +6,7 @@ use Illuminate\Support\Collection;
 use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Gateway\TextGenerationOptions;
+use Laravel\Ai\ObjectSchema;
 use Laravel\Ai\Messages\AssistantMessage;
 use Laravel\Ai\Messages\ToolResultMessage;
 use Laravel\Ai\Providers\Provider;
@@ -20,6 +21,7 @@ use Laravel\Ai\Responses\TextResponse;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
+use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 trait ParsesTextResponses
 {
@@ -99,6 +101,7 @@ trait ParsesTextResponses
         ?int $maxSteps = null,
         ?TextGenerationOptions $options = null,
         ?int $timeout = null,
+        int $structuredRetries = 0,
     ): TextResponse {
         $choice = $data['choices'][0] ?? [];
         $message = $choice['message'] ?? [];
@@ -190,6 +193,7 @@ trait ParsesTextResponses
                 $maxSteps,
                 $options,
                 $timeout,
+                $structuredRetries,
             );
         }
 
@@ -197,10 +201,37 @@ trait ParsesTextResponses
         $allToolResults = $steps->flatMap(fn (Step $s) => $s->toolResults);
 
         if ($structured) {
-            $structuredData = json_decode($text, true) ?? [];
+            $structuredData = json_decode($text, true);
+            $validationErrors = $this->structuredOutputErrors($structuredData, $schema);
+
+            // Workers AI JSON mode does NOT guarantee the response satisfies the
+            // requested schema — a model can omit a required field, emit an
+            // out-of-enum value, or return malformed JSON. Feed the validation
+            // error back and re-ask (bounded). Truncation (Length) is a token-
+            // budget problem re-asking can't fix, so it's left to the caller.
+            if (filled($validationErrors)
+                && $finishReason !== FinishReason::Length
+                && $structuredRetries < $this->maxStructuredRetries($provider)) {
+                return $this->reaskForValidStructuredOutput(
+                    $model,
+                    $provider,
+                    $tools,
+                    $schema,
+                    $steps,
+                    $messages,
+                    $instructions,
+                    $originalMessages,
+                    $depth,
+                    $maxSteps,
+                    $options,
+                    $timeout,
+                    $structuredRetries + 1,
+                    $validationErrors,
+                );
+            }
 
             return (new StructuredTextResponse(
-                $structuredData,
+                is_array($structuredData) ? $structuredData : [],
                 $text,
                 $this->combineUsage($steps),
                 new Meta($provider->name(), $model),
@@ -266,6 +297,7 @@ trait ParsesTextResponses
         ?int $maxSteps,
         ?TextGenerationOptions $options = null,
         ?int $timeout = null,
+        int $structuredRetries = 0,
     ): TextResponse {
         $chatMessages = $this->mapMessagesToChat($originalMessages, $instructions);
 
@@ -311,7 +343,151 @@ trait ParsesTextResponses
             $maxSteps,
             $options,
             $timeout,
+            $structuredRetries,
         );
+    }
+
+    /**
+     * Re-ask the model for schema-valid structured output.
+     *
+     * Workers AI's JSON mode is best-effort, not a guarantee. When the returned
+     * object fails validation, append a user message naming the exact problems
+     * and request again — the model's invalid turn stays in the transcript so it
+     * can self-correct. Bounded by `maxStructuredRetries`. This is the
+     * driver-level safety net for the platform's missing conformance guarantee.
+     *
+     * @param  array<Tool>  $tools
+     * @param  array<string, mixed>|null  $schema
+     * @param  list<string>  $errors
+     */
+    protected function reaskForValidStructuredOutput(
+        string $model,
+        Provider $provider,
+        array $tools,
+        ?array $schema,
+        Collection $steps,
+        Collection $messages,
+        ?string $instructions,
+        array $originalMessages,
+        int $depth,
+        ?int $maxSteps,
+        ?TextGenerationOptions $options,
+        ?int $timeout,
+        int $structuredRetries,
+        array $errors,
+    ): TextResponse {
+        $chatMessages = $this->mapMessagesToChat($originalMessages, $instructions);
+
+        foreach ($messages as $msg) {
+            match (true) {
+                $msg instanceof AssistantMessage => $this->mapAssistantMessage($msg, $chatMessages),
+                $msg instanceof ToolResultMessage => $this->mapToolResultMessage($msg, $chatMessages),
+                default => null,
+            };
+        }
+
+        $chatMessages[] = [
+            'role' => 'user',
+            'content' => 'Your previous response did not satisfy the required JSON schema: '
+                .implode('; ', $errors)
+                .'. Reply again with a single valid JSON object that fills every required field with an appropriate value. Output only the JSON object, with no surrounding text.',
+        ];
+
+        $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
+            ['model' => $model, 'messages' => $chatMessages],
+            provider: $provider,
+            tools: $tools,
+            schema: $schema,
+            options: $options,
+        ));
+
+        $response = $this->withErrorHandling(
+            $provider->name(),
+            fn () => $this->client($provider, $timeout)->post('chat/completions', $body),
+        );
+
+        $data = $response->json();
+
+        $this->validateTextResponse($data);
+
+        return $this->processResponse(
+            $data,
+            $provider,
+            true,
+            $tools,
+            $schema,
+            $steps,
+            $messages,
+            $instructions,
+            $originalMessages,
+            $depth,
+            $maxSteps,
+            $options,
+            $timeout,
+            $structuredRetries,
+        );
+    }
+
+    /**
+     * Validate decoded structured output against the requested schema and return
+     * a list of human-readable problems (empty = valid). Targets the failure
+     * Workers AI's best-effort JSON mode actually produces in the field — a
+     * well-formed JSON object that omits/empties a required field or carries an
+     * out-of-enum value (e.g. Kimi K2.6's empty-required-field bug) — without
+     * pulling in a full JSON-Schema validator. A non-object payload (prose,
+     * unparseable JSON) is left to the caller's fallback rather than re-asked,
+     * since `response_format` makes that case rare and re-asking it is lower-value.
+     *
+     * @param  array<string, mixed>|null  $schema
+     * @return list<string>
+     */
+    protected function structuredOutputErrors(mixed $data, ?array $schema): array
+    {
+        if (! is_array($data) || blank($data) || blank($schema)) {
+            return [];
+        }
+
+        $compiled = (new ObjectSchema($schema))->toSchema();
+        $required = $compiled['required'] ?? [];
+        $properties = $compiled['properties'] ?? [];
+
+        $errors = [];
+
+        foreach ($required as $field) {
+            $value = $data[$field] ?? null;
+
+            if (! array_key_exists($field, $data)
+                || $value === null
+                || (is_string($value) && trim($value) === '')) {
+                $errors[] = "required field `{$field}` is missing or empty";
+            }
+        }
+
+        foreach ($properties as $field => $definition) {
+            $value = $data[$field] ?? null;
+
+            if ($value === null || ! is_array($definition)) {
+                continue;
+            }
+
+            $enum = $definition['enum'] ?? null;
+
+            if (is_array($enum) && filled($enum) && ! in_array($value, $enum, true)) {
+                $errors[] = "field `{$field}` must be one of: ".implode(', ', $enum);
+            }
+        }
+
+        return array_values($errors);
+    }
+
+    /**
+     * The maximum number of times to re-ask for schema-valid structured output.
+     */
+    protected function maxStructuredRetries(Provider $provider): int
+    {
+        return $provider instanceof WorkersAiProvider
+            ? $provider->structuredOutputRetries()
+            : 2;
     }
 
     /**
