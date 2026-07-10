@@ -2,24 +2,27 @@
 
 namespace Meirdick\WorkersAi\Gateway;
 
-use Generator;
 use Illuminate\Contracts\Events\Dispatcher;
 use Laravel\Ai\Contracts\Gateway\EmbeddingGateway;
-use Laravel\Ai\Contracts\Gateway\TextGateway;
+use Laravel\Ai\Contracts\Gateway\StepTextGateway;
 use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
-use Laravel\Ai\Contracts\Providers\TextProvider;
-use Laravel\Ai\Gateway\Concerns\HandlesFailoverErrors;
-use Laravel\Ai\Gateway\Concerns\InvokesTools;
-use Laravel\Ai\Gateway\Concerns\ParsesServerSentEvents;
 use Laravel\Ai\Exceptions\AiException;
-use Laravel\Ai\Gateway\TextGenerationOptions;
+use Laravel\Ai\Gateway\Concerns\HandlesFailoverErrors;
+use Laravel\Ai\Gateway\Concerns\ParsesServerSentEvents;
 use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\EmbeddingsResponse;
-use Laravel\Ai\Responses\TextResponse;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
 
-class WorkersAiGateway implements EmbeddingGateway, TextGateway
+/**
+ * Single-step Workers AI gateway (laravel/ai ^0.9).
+ *
+ * Implements StepTextGateway: each call performs exactly one model turn. The
+ * multi-step tool loop, tool invocation, message replay, and step/usage
+ * accumulation are owned by laravel/ai's TextGenerationLoop, which the
+ * provider exposes via HasTextGateway::textGenerationLoop().
+ */
+class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
 {
     use Concerns\BuildsTextRequests;
     use Concerns\CreatesWorkersAiClient;
@@ -28,117 +31,19 @@ class WorkersAiGateway implements EmbeddingGateway, TextGateway
     use Concerns\MapsMessages;
     use Concerns\MapsTools;
     use Concerns\ParsesTextResponses;
+    use Concerns\PerformsChatCompletionSteps;
     use HandlesFailoverErrors;
-    use InvokesTools;
     use ParsesServerSentEvents;
 
     public function __construct(protected Dispatcher $events)
     {
-        $this->initializeToolCallbacks();
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function generateText(
-        TextProvider $provider,
-        string $model,
-        ?string $instructions,
-        array $messages = [],
-        array $tools = [],
-        ?array $schema = null,
-        ?TextGenerationOptions $options = null,
-        ?int $timeout = null,
-    ): TextResponse {
-        $this->validateModelName($provider, $model);
-
-        $body = $this->buildTextRequestBody(
-            $provider,
-            $model,
-            $instructions,
-            $messages,
-            $tools,
-            $schema,
-            $options,
-        );
-
-        $response = $this->withErrorHandling(
-            $provider->name(),
-            fn () => $this->client($provider, $timeout)->post('chat/completions', $body),
-        );
-
-        $data = $response->json();
-
-        $this->validateTextResponse($data);
-
-        return $this->parseTextResponse(
-            $data,
-            $provider,
-            filled($schema),
-            $tools,
-            $schema,
-            $options,
-            $instructions,
-            $messages,
-            $timeout,
-        );
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public function streamText(
-        string $invocationId,
-        TextProvider $provider,
-        string $model,
-        ?string $instructions,
-        array $messages = [],
-        array $tools = [],
-        ?array $schema = null,
-        ?TextGenerationOptions $options = null,
-        ?int $timeout = null,
-    ): Generator {
-        $this->validateModelName($provider, $model);
-
-        $body = $this->buildTextRequestBody(
-            $provider,
-            $model,
-            $instructions,
-            $messages,
-            $tools,
-            $schema,
-            $options,
-        );
-
-        $body['stream'] = true;
-        $body['stream_options'] = ['include_usage' => true];
-
-        $response = $this->withErrorHandling(
-            $provider->name(),
-            fn () => $this->client($provider, $timeout)
-                ->withOptions(['stream' => true])
-                ->post('chat/completions', $body),
-        );
-
-        yield from $this->processTextStream(
-            $invocationId,
-            $provider,
-            $model,
-            $tools,
-            $schema,
-            $options,
-            $response->getBody(),
-            $instructions,
-            $messages,
-            timeout: $timeout,
-        );
+        //
     }
 
     /**
      * {@inheritdoc}
      *
-     * `$providerOptions` was added to the contract in laravel/ai v0.6.8. We
-     * forward any caller-supplied keys into the Workers AI request body so
+     * We forward any caller-supplied keys into the Workers AI request body so
      * users can pass through Cloudflare-specific or future OpenAI-compatible
      * fields (e.g. `encoding_format`) without a package change. Reserved keys
      * (`model`, `input`) are stripped to keep the gateway in charge of the

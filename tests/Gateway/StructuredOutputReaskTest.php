@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\Http;
 use Tests\Fixtures\Agents\NonStrictAgent;
+use Tests\Fixtures\Agents\ToolUsingAgent;
 
 /**
  * Workers AI's JSON mode is best-effort — it does NOT guarantee the response
@@ -80,6 +81,24 @@ test('re-asking stops at the configured limit', function () {
 
     // 1 initial attempt + 1 bounded re-ask = 2, then it gives up.
     Http::assertSentCount(2);
+});
+
+test('a re-ask after a tool step is a same-step retry and does not consume the loop budget', function () {
+    // ToolUsingAgent has one tool, so the core TextGenerationLoop budgets
+    // round(1 * 1.5) = 2 steps. Step 1 is the tool call; step 2 returns
+    // schema-invalid JSON. The re-ask runs INSIDE step 2 (generateTextStep),
+    // so the corrected third request still fits — if the re-ask were a loop
+    // step it would blow the budget and return the invalid object.
+    Http::fake(['api.cloudflare.com/*' => Http::sequence()
+        ->push(fakeWorkersAiToolCallResponse())
+        ->push(structuredEnvelope('{"wrong":"x"}'))    // missing required `number`
+        ->push(structuredEnvelope('{"number":72019}')), // corrected on re-ask
+    ]);
+
+    $response = (new ToolUsingAgent(fixed: true))->prompt('Generate a number', provider: 'workersai');
+
+    expect($response['number'])->toBe(72019);
+    Http::assertSentCount(3);
 });
 
 test('re-asking can be disabled with structured_output_retries = 0', function () {

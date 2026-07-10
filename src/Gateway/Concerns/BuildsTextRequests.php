@@ -5,6 +5,7 @@ namespace Meirdick\WorkersAi\Gateway\Concerns;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Log;
 use Laravel\Ai\Attributes\Strict;
+use Laravel\Ai\Gateway\StepContext;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
 use Laravel\Ai\Providers\Provider;
@@ -13,10 +14,15 @@ use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 trait BuildsTextRequests
 {
     /**
-     * Build the request body for the Chat Completions API from
-     * `Laravel\Ai\Messages\Message[]` (initial-turn shape).
+     * Build the request body for the current text generation step.
+     *
+     * In laravel/ai 0.9 the multi-step tool loop lives in the core
+     * TextGenerationLoop, which replays the full message history (assistant
+     * turns, tool results) into every step — so a single body builder now
+     * serves what used to be three call sites (initial turn, tool follow-up,
+     * structured re-ask).
      */
-    protected function buildTextRequestBody(
+    protected function buildStepBody(
         Provider $provider,
         string $model,
         ?string $instructions,
@@ -24,39 +30,13 @@ trait BuildsTextRequests
         array $tools,
         ?array $schema,
         ?TextGenerationOptions $options,
+        StepContext $stepContext,
     ): array {
-        return $this->finalizeChatBody(
-            [
-                'model' => $model,
-                'messages' => $this->mapMessagesToChat($messages, $instructions),
-            ],
-            provider: $provider,
-            tools: $tools,
-            schema: $schema,
-            options: $options,
-        );
-    }
+        $body = [
+            'model' => $model,
+            'messages' => $this->mapMessagesToChat($messages, $instructions),
+        ];
 
-    /**
-     * Append tools, response_format, sampling options, and providerOptions to
-     * a body that already carries `model` and `messages`.
-     *
-     * Called from three places — `buildTextRequestBody` (initial turn) and the
-     * tool-call follow-up bodies in `ParsesTextResponses::continueWithToolResults`
-     * and `HandlesTextStreaming::handleStreamingToolCalls`. Previously each site
-     * rebuilt the same shape inline, which let new options drift between paths;
-     * threading them all through this helper is the single source of truth.
-     *
-     * @param  array<string, mixed>  $body  must already contain `model` + `messages`
-     * @return array<string, mixed>
-     */
-    protected function finalizeChatBody(
-        array $body,
-        Provider $provider,
-        array $tools,
-        ?array $schema,
-        ?TextGenerationOptions $options,
-    ): array {
         if (filled($tools)) {
             $mappedTools = $this->mapTools($tools);
 
@@ -90,7 +70,15 @@ trait BuildsTextRequests
             $body = array_merge($body, Arr::except($providerOptions, ['session_affinity']));
         }
 
-        return $this->guardThinkingTokenBudget($body);
+        $body = $this->guardThinkingTokenBudget($body);
+
+        // Tool-result follow-up turns (any step after the first) must not
+        // re-send a forced tool_choice — see relaxForcedToolChoice.
+        if ($stepContext->stepNumber > 0) {
+            $body = $this->relaxForcedToolChoice($body);
+        }
+
+        return $body;
     }
 
     /**

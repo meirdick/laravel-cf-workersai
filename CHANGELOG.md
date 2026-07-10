@@ -4,6 +4,38 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased] - 0.6.0
+
+Migrates the package from laravel/ai `^0.8` to `^0.9`. The composer constraint is now `laravel/ai ^0.9` — for `^0.7 || ^0.8` stay on `^0.5` of this package.
+
+### Changed
+
+- **`WorkersAiGateway` now implements `StepTextGateway`** (laravel/ai 0.9 removed the `TextGateway` contract). The gateway performs exactly one model turn per call via `generateTextStep()` / `generateStreamStep()`; `generateText()` / `streamText()` are gone. If you called the gateway directly, go through the provider's `textGenerationLoop()` instead (`WorkersAiProvider` gets it from `HasTextGateway`).
+- **The multi-step tool loop moved to laravel/ai core.** Tool invocation, tool-result message replay, step accumulation, cross-step streamed-usage summation, and the final `StreamEnd` event are now owned by `Laravel\Ai\Gateway\TextGenerationLoop`. The package-side recursion in `ParsesTextResponses` (`processResponse` / `continueWithToolResults` / `executeToolCalls`) and `HandlesTextStreaming` (`handleStreamingToolCalls`, follow-up requests, `StreamEnd` emission) was deleted. Everything Cloudflare-specific survives inside the single step:
+  - AI Gateway / direct base-URL routing, `@cf/` model-name validation, and the `x-session-affinity` header;
+  - Cloudflare error envelopes (OpenAI shape + AI Gateway shape) on the text, streaming, and embeddings paths;
+  - the 4096-token `default_max_tokens` guard and the truncation heuristic (`stop`-at-budget → `FinishReason::Length`), which still judges each step's own completion tokens so loop-level accumulation cannot misreport `Length`;
+  - reasoning-model support: `reasoning` / `reasoning_content` capture (now returned through `StepResponse::$providerContentBlocks`, which the core loop replays into follow-up assistant turns), streaming reasoning events, and the 2048 thinking-token floor;
+  - the streamed tool-call accumulator and the trailing all-zero usage chunk tolerance;
+  - the retry policy and the 502/503/504 → `ProviderOverloadedException` mapping;
+  - a forced `tool_choice` is still relaxed to `auto` on follow-up turns, now keyed off `StepContext::$stepNumber`.
+- **The structured-output validate + bounded re-ask now runs inside `generateTextStep()`.** A re-ask is a same-step retry against Workers AI's best-effort JSON mode — not a tool step — so it no longer consumes the loop's step budget. `structured_output_retries` config semantics are unchanged.
+- Structured output is decoded with core's `DecodesStructuredOutput`, so a JSON response wrapped in markdown code fences now parses instead of yielding an empty object.
+- `WorkersAiProvider::textGateway()` returns `StepTextGateway` (was `TextGateway`).
+- Embeddings tests/docs use `withProviderOptions()` (laravel/ai 0.9 renamed the embeddings builder method from `providerOptions()`).
+
+### Behavior notes (inherited from laravel/ai 0.9's loop)
+
+- A tool call naming a tool the agent has not registered now throws `NoSuchToolException` (the old package-side loop skipped it silently).
+- When a streamed tool-call loop exhausts its step budget, the final `StreamEnd` reports the real finish reason (`tool_calls`) instead of a synthesized `stop`.
+- `Agent::fake()` responses run through the real `TextGenerationLoop` (see laravel/ai's UPGRADE.md for the four test-visible differences).
+
+## [0.5.0] - 2026-06-12
+
+### Added
+
+- **Structured-output validate + bounded re-ask.** Workers AI's JSON mode is best-effort — it does not guarantee the response satisfies the requested schema. The gateway now validates each structured response (missing/empty required fields, out-of-enum values) and, on failure, feeds the validation error back and re-asks the model, bounded by the new `structured_output_retries` provider config (default `2`, set `0` to disable). Truncated (`Length`) responses are not re-asked since a token-budget problem cannot be fixed by asking again.
+
 ## [0.4.0] - 2026-06-12
 
 Hardens reasoning-model support so thinking-capable models (Kimi K2.6, QwQ, Gemma) behave predictably. Reasoning stays controlled through `HasProviderOptions` — the laravel/ai convention for Anthropic `thinking` / Gemini `thinkingConfig` — so there is no new attribute to learn; these are robustness fixes for when it is enabled.

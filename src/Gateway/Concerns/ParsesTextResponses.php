@@ -2,22 +2,16 @@
 
 namespace Meirdick\WorkersAi\Gateway\Concerns;
 
-use Illuminate\Support\Collection;
-use Laravel\Ai\Contracts\Tool;
 use Laravel\Ai\Exceptions\AiException;
+use Laravel\Ai\Gateway\Concerns\DecodesStructuredOutput;
+use Laravel\Ai\Gateway\StepResponse;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
-use Laravel\Ai\Messages\AssistantMessage;
-use Laravel\Ai\Messages\ToolResultMessage;
 use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Responses\Data\Meta;
-use Laravel\Ai\Responses\Data\Step;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\ToolResult;
 use Laravel\Ai\Responses\Data\Usage;
-use Laravel\Ai\Responses\StructuredTextResponse;
-use Laravel\Ai\Responses\TextResponse;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
@@ -25,6 +19,8 @@ use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 trait ParsesTextResponses
 {
+    use DecodesStructuredOutput;
+
     /**
      * Validate the Workers AI response data.
      *
@@ -37,7 +33,7 @@ trait ParsesTextResponses
      *
      * @throws AiException
      */
-    protected function validateTextResponse(array $data): void
+    protected function validateTextResponse(?array $data): void
     {
         if (ErrorEnvelope::isErrorPayload($data)) {
             throw new AiException(sprintf(
@@ -55,54 +51,17 @@ trait ParsesTextResponses
     }
 
     /**
-     * Parse the Workers AI response data into a TextResponse.
+     * Parse a single Workers AI response into a StepResponse.
+     *
+     * Tool invocation, message replay, and step accumulation are owned by
+     * laravel/ai's TextGenerationLoop in 0.9 — this only maps one response.
      */
     protected function parseTextResponse(
         array $data,
         Provider $provider,
         bool $structured,
-        array $tools = [],
-        ?array $schema = null,
         ?TextGenerationOptions $options = null,
-        ?string $instructions = null,
-        array $originalMessages = [],
-        ?int $timeout = null,
-    ): TextResponse {
-        return $this->processResponse(
-            $data,
-            $provider,
-            $structured,
-            $tools,
-            $schema,
-            new Collection,
-            new Collection,
-            instructions: $instructions,
-            originalMessages: $originalMessages,
-            maxSteps: $options?->maxSteps,
-            options: $options,
-            timeout: $timeout,
-        );
-    }
-
-    /**
-     * Process a single response, handling tool loops recursively.
-     */
-    protected function processResponse(
-        array $data,
-        Provider $provider,
-        bool $structured,
-        array $tools,
-        ?array $schema,
-        Collection $steps,
-        Collection $messages,
-        ?string $instructions = null,
-        array $originalMessages = [],
-        int $depth = 0,
-        ?int $maxSteps = null,
-        ?TextGenerationOptions $options = null,
-        ?int $timeout = null,
-        int $structuredRetries = 0,
-    ): TextResponse {
+    ): StepResponse {
         $choice = $data['choices'][0] ?? [];
         $message = $choice['message'] ?? [];
         $model = $data['model'] ?? '';
@@ -126,306 +85,40 @@ trait ParsesTextResponses
             $toolCall['id'] ?? null,
         ), $rawToolCalls);
 
-        $step = new Step(
-            $text,
-            $mappedToolCalls,
-            [],
-            $finishReason,
-            $usage,
-            new Meta($provider->name(), $model),
+        return new StepResponse(
+            text: $text,
+            toolCalls: $mappedToolCalls,
+            finishReason: $finishReason,
+            usage: $usage,
+            meta: new Meta($provider->name(), $model),
+            structured: $structured ? $this->decodeStructuredOutput($text) : null,
+            providerContentBlocks: $this->extractProviderContentBlocks($message),
         );
-
-        $steps->push($step);
-
-        // Capture reasoning into providerContentBlocks so it round-trips through
-        // the tool-call follow-up. Reasoning models (Kimi K2.5/K2.6, Gemma 4,
-        // QwQ on Workers AI; DeepSeek upstream) lose multi-turn coherence if the
-        // thinking that led to the first tool call isn't replayed on the next
-        // request. Pattern matches laravel/ai's DeepSeek native gateway.
-        //
-        // Kimi K2.6 renamed the response field from `reasoning_content` to
-        // `reasoning`; Cloudflare's /compat layer has emitted both across model
-        // versions, so accept either and normalize to the canonical
-        // `reasoning_content` key that MapsMessages replays on follow-up turns.
-        // This mirrors the streaming path (HandlesTextStreaming reads
-        // `reasoning_content ?? reasoning`).
-        $providerContentBlocks = [];
-        $reasoning = $message['reasoning_content'] ?? $message['reasoning'] ?? null;
-        if (filled($reasoning)) {
-            $providerContentBlocks['reasoning_content'] = $reasoning;
-        }
-
-        $assistantMessage = new AssistantMessage($text, collect($mappedToolCalls), $providerContentBlocks);
-
-        $messages->push($assistantMessage);
-
-        if ($finishReason === FinishReason::ToolCalls &&
-            filled($mappedToolCalls) &&
-            $steps->count() < ($maxSteps ?? round(count($tools) * 1.5))) {
-            $toolResults = $this->executeToolCalls($mappedToolCalls, $tools);
-
-            $steps->pop();
-
-            $steps->push(new Step(
-                $text,
-                $mappedToolCalls,
-                $toolResults,
-                $finishReason,
-                $usage,
-                new Meta($provider->name(), $model),
-            ));
-
-            $toolResultMessage = new ToolResultMessage(collect($toolResults));
-
-            $messages->push($toolResultMessage);
-
-            return $this->continueWithToolResults(
-                $model,
-                $provider,
-                $structured,
-                $tools,
-                $schema,
-                $steps,
-                $messages,
-                $instructions,
-                $originalMessages,
-                $depth + 1,
-                $maxSteps,
-                $options,
-                $timeout,
-                $structuredRetries,
-            );
-        }
-
-        $allToolCalls = $steps->flatMap(fn (Step $s) => $s->toolCalls);
-        $allToolResults = $steps->flatMap(fn (Step $s) => $s->toolResults);
-
-        if ($structured) {
-            $structuredData = json_decode($text, true);
-            $validationErrors = $this->structuredOutputErrors($structuredData, $schema);
-
-            // Workers AI JSON mode does NOT guarantee the response satisfies the
-            // requested schema — a model can omit a required field, emit an
-            // out-of-enum value, or return malformed JSON. Feed the validation
-            // error back and re-ask (bounded). Truncation (Length) is a token-
-            // budget problem re-asking can't fix, so it's left to the caller.
-            if (filled($validationErrors)
-                && $finishReason !== FinishReason::Length
-                && $structuredRetries < $this->maxStructuredRetries($provider)) {
-                return $this->reaskForValidStructuredOutput(
-                    $model,
-                    $provider,
-                    $tools,
-                    $schema,
-                    $steps,
-                    $messages,
-                    $instructions,
-                    $originalMessages,
-                    $depth,
-                    $maxSteps,
-                    $options,
-                    $timeout,
-                    $structuredRetries + 1,
-                    $validationErrors,
-                );
-            }
-
-            return (new StructuredTextResponse(
-                is_array($structuredData) ? $structuredData : [],
-                $text,
-                $this->combineUsage($steps),
-                new Meta($provider->name(), $model),
-            ))->withToolCallsAndResults(
-                toolCalls: $allToolCalls,
-                toolResults: $allToolResults,
-            )->withSteps($steps);
-        }
-
-        return (new TextResponse(
-            $text,
-            $this->combineUsage($steps),
-            new Meta($provider->name(), $model),
-        ))->withMessages($messages)->withSteps($steps);
     }
 
     /**
-     * Execute tool calls and return tool results.
+     * Capture reasoning into providerContentBlocks so the core loop replays it
+     * on the tool-call follow-up (the loop passes these blocks into the next
+     * step's AssistantMessage, and MapsMessages::mapAssistantMessage emits them
+     * as `reasoning_content`). Reasoning models (Kimi K2.5/K2.6, Gemma 4, QwQ
+     * on Workers AI; DeepSeek upstream) lose multi-turn coherence if the
+     * thinking that led to the first tool call isn't replayed on the next
+     * request.
      *
-     * @param  array<ToolCall>  $toolCalls
-     * @param  array<Tool>  $tools
-     * @return array<ToolResult>
+     * Kimi K2.6 renamed the response field from `reasoning_content` to
+     * `reasoning`; Cloudflare's /compat layer has emitted both across model
+     * versions, so accept either and normalize to the canonical
+     * `reasoning_content` key. This mirrors the streaming path
+     * (HandlesTextStreaming reads `reasoning_content ?? reasoning ?? thinking`).
+     *
+     * @param  array<string, mixed>  $message
+     * @return array<string, mixed>
      */
-    protected function executeToolCalls(array $toolCalls, array $tools): array
+    protected function extractProviderContentBlocks(array $message): array
     {
-        $results = [];
+        $reasoning = $message['reasoning_content'] ?? $message['reasoning'] ?? null;
 
-        foreach ($toolCalls as $toolCall) {
-            $tool = $this->findTool($toolCall->name, $tools);
-
-            if ($tool === null) {
-                continue;
-            }
-
-            $result = $this->executeTool($tool, $toolCall->arguments);
-
-            $results[] = new ToolResult(
-                $toolCall->id,
-                $toolCall->name,
-                $toolCall->arguments,
-                $result,
-                $toolCall->resultId,
-            );
-        }
-
-        return $results;
-    }
-
-    /**
-     * Continue the conversation with tool results by making a follow-up request.
-     */
-    protected function continueWithToolResults(
-        string $model,
-        Provider $provider,
-        bool $structured,
-        array $tools,
-        ?array $schema,
-        Collection $steps,
-        Collection $messages,
-        ?string $instructions,
-        array $originalMessages,
-        int $depth,
-        ?int $maxSteps,
-        ?TextGenerationOptions $options = null,
-        ?int $timeout = null,
-        int $structuredRetries = 0,
-    ): TextResponse {
-        $chatMessages = $this->mapMessagesToChat($originalMessages, $instructions);
-
-        foreach ($messages as $msg) {
-            match (true) {
-                $msg instanceof AssistantMessage => $this->mapAssistantMessage($msg, $chatMessages),
-                $msg instanceof ToolResultMessage => $this->mapToolResultMessage($msg, $chatMessages),
-                default => null,
-            };
-        }
-
-        // finalizeChatBody (in BuildsTextRequests) appends tools, response_format,
-        // sampling options, and providerOptions to the body. Same helper the
-        // initial-turn buildTextRequestBody uses — single source of truth.
-        $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
-            ['model' => $model, 'messages' => $chatMessages],
-            provider: $provider,
-            tools: $tools,
-            schema: $schema,
-            options: $options,
-        ));
-
-        $response = $this->withErrorHandling(
-            $provider->name(),
-            fn () => $this->client($provider, $timeout)->post('chat/completions', $body),
-        );
-
-        $data = $response->json();
-
-        $this->validateTextResponse($data);
-
-        return $this->processResponse(
-            $data,
-            $provider,
-            $structured,
-            $tools,
-            $schema,
-            $steps,
-            $messages,
-            $instructions,
-            $originalMessages,
-            $depth,
-            $maxSteps,
-            $options,
-            $timeout,
-            $structuredRetries,
-        );
-    }
-
-    /**
-     * Re-ask the model for schema-valid structured output.
-     *
-     * Workers AI's JSON mode is best-effort, not a guarantee. When the returned
-     * object fails validation, append a user message naming the exact problems
-     * and request again — the model's invalid turn stays in the transcript so it
-     * can self-correct. Bounded by `maxStructuredRetries`. This is the
-     * driver-level safety net for the platform's missing conformance guarantee.
-     *
-     * @param  array<Tool>  $tools
-     * @param  array<string, mixed>|null  $schema
-     * @param  list<string>  $errors
-     */
-    protected function reaskForValidStructuredOutput(
-        string $model,
-        Provider $provider,
-        array $tools,
-        ?array $schema,
-        Collection $steps,
-        Collection $messages,
-        ?string $instructions,
-        array $originalMessages,
-        int $depth,
-        ?int $maxSteps,
-        ?TextGenerationOptions $options,
-        ?int $timeout,
-        int $structuredRetries,
-        array $errors,
-    ): TextResponse {
-        $chatMessages = $this->mapMessagesToChat($originalMessages, $instructions);
-
-        foreach ($messages as $msg) {
-            match (true) {
-                $msg instanceof AssistantMessage => $this->mapAssistantMessage($msg, $chatMessages),
-                $msg instanceof ToolResultMessage => $this->mapToolResultMessage($msg, $chatMessages),
-                default => null,
-            };
-        }
-
-        $chatMessages[] = [
-            'role' => 'user',
-            'content' => 'Your previous response did not satisfy the required JSON schema: '
-                .implode('; ', $errors)
-                .'. Reply again with a single valid JSON object that fills every required field with an appropriate value. Output only the JSON object, with no surrounding text.',
-        ];
-
-        $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
-            ['model' => $model, 'messages' => $chatMessages],
-            provider: $provider,
-            tools: $tools,
-            schema: $schema,
-            options: $options,
-        ));
-
-        $response = $this->withErrorHandling(
-            $provider->name(),
-            fn () => $this->client($provider, $timeout)->post('chat/completions', $body),
-        );
-
-        $data = $response->json();
-
-        $this->validateTextResponse($data);
-
-        return $this->processResponse(
-            $data,
-            $provider,
-            true,
-            $tools,
-            $schema,
-            $steps,
-            $messages,
-            $instructions,
-            $originalMessages,
-            $depth,
-            $maxSteps,
-            $options,
-            $timeout,
-            $structuredRetries,
-        );
+        return filled($reasoning) ? ['reasoning_content' => $reasoning] : [];
     }
 
     /**
@@ -559,16 +252,5 @@ trait ParsesTextResponses
             'content_filter' => FinishReason::ContentFilter,
             default => FinishReason::Unknown,
         };
-    }
-
-    /**
-     * Combine usage across all steps.
-     */
-    protected function combineUsage(Collection $steps): Usage
-    {
-        return $steps->reduce(
-            fn (Usage $carry, Step $step) => $carry->add($step->usage),
-            new Usage(0, 0)
-        );
     }
 }

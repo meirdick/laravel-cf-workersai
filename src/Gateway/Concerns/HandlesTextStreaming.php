@@ -4,22 +4,21 @@ namespace Meirdick\WorkersAi\Gateway\Concerns;
 
 use Generator;
 use Illuminate\Support\Str;
+use Laravel\Ai\Gateway\StepResponse;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\Providers\Provider;
+use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolCall;
-use Laravel\Ai\Responses\Data\ToolResult;
 use Laravel\Ai\Responses\Data\Usage;
 use Laravel\Ai\Streaming\Events\Error;
 use Laravel\Ai\Streaming\Events\ReasoningDelta;
 use Laravel\Ai\Streaming\Events\ReasoningEnd;
 use Laravel\Ai\Streaming\Events\ReasoningStart;
-use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\StreamStart;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\TextEnd;
 use Laravel\Ai\Streaming\Events\TextStart;
 use Laravel\Ai\Streaming\Events\ToolCall as ToolCallEvent;
-use Laravel\Ai\Streaming\Events\ToolResult as ToolResultEvent;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\StreamToolCallAccumulator;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
@@ -28,40 +27,41 @@ use Meirdick\WorkersAi\Cloudflare\UsageTokens;
 trait HandlesTextStreaming
 {
     /**
-     * Process a Chat Completions streaming response and yield Laravel stream events.
+     * Process a Chat Completions streaming response for a single step and
+     * yield Laravel stream events.
+     *
+     * Since laravel/ai 0.9 this handles exactly one step: tool execution, the
+     * follow-up request, cross-step usage accumulation, and the final
+     * StreamEnd event are all owned by the core TextGenerationLoop. The step
+     * returns a StepResponse whose usage the loop sums and whose
+     * providerContentBlocks (captured reasoning) the loop replays into the
+     * follow-up turn's assistant message.
+     *
+     * @return Generator<int, \Laravel\Ai\Streaming\Events\StreamEvent, mixed, StepResponse|null>
      */
     protected function processTextStream(
         string $invocationId,
         Provider $provider,
         string $model,
-        array $tools,
-        ?array $schema,
         ?TextGenerationOptions $options,
         $streamBody,
-        ?string $instructions = null,
-        array $originalMessages = [],
-        int $depth = 0,
-        ?int $maxSteps = null,
-        array $priorChatMessages = [],
-        ?int $timeout = null,
-        ?Usage $accumulatedUsage = null,
     ): Generator {
-        $maxSteps ??= $options?->maxSteps;
-
         $messageId = $this->generateEventId();
         $reasoningId = '';
         $streamStartEmitted = false;
         $textStartEmitted = false;
         $reasoningStartEmitted = false;
         $currentText = '';
-        // Accumulated reasoning so the streaming tool-call follow-up can replay
-        // it on the next request (matches DeepSeek native gateway behavior).
-        // Without replay, multi-turn tool conversations with reasoning models
-        // lose chain-of-thought across the tool boundary.
+        // Accumulated reasoning so the loop can replay it on the tool-call
+        // follow-up turn (matches DeepSeek native gateway behavior). Without
+        // replay, multi-turn tool conversations with reasoning models lose
+        // chain-of-thought across the tool boundary.
         $currentReasoning = '';
         $pendingToolCalls = [];
+        $toolCalls = [];
         $usage = null;
         $finishReason = null;
+        $responseModel = $model;
 
         foreach ($this->parseServerSentEvents($streamBody) as $data) {
             // ErrorEnvelope handles both `{"error": {...}}` (OpenAI shape) and
@@ -76,7 +76,7 @@ trait HandlesTextStreaming
                     time(),
                 ))->withInvocationId($invocationId);
 
-                return;
+                return null;
             }
 
             $choice = $data['choices'][0] ?? null;
@@ -93,6 +93,7 @@ trait HandlesTextStreaming
 
             if (! $streamStartEmitted) {
                 $streamStartEmitted = true;
+                $responseModel = $data['model'] ?? $model;
 
                 yield (new StreamStart(
                     $this->generateEventId(),
@@ -197,57 +198,36 @@ trait HandlesTextStreaming
         }
 
         if (filled($pendingToolCalls) && $finishReason === 'tool_calls') {
-            $mappedToolCalls = $this->mapStreamToolCalls($pendingToolCalls);
+            $toolCalls = $this->mapStreamToolCalls($pendingToolCalls);
 
-            foreach ($mappedToolCalls as $toolCall) {
+            foreach ($toolCalls as $toolCall) {
                 yield (new ToolCallEvent(
                     $this->generateEventId(),
                     $toolCall,
                     time(),
                 ))->withInvocationId($invocationId);
             }
-
-            yield from $this->handleStreamingToolCalls(
-                $invocationId,
-                $provider,
-                $model,
-                $tools,
-                $schema,
-                $options,
-                $mappedToolCalls,
-                $currentText,
-                $instructions,
-                $originalMessages,
-                $depth,
-                $maxSteps,
-                $priorChatMessages,
-                $timeout,
-                $currentReasoning,
-                ($accumulatedUsage ?? new Usage(0, 0))->add($usage ?? new Usage(0, 0)),
-            );
-
-            return;
         }
 
         $stepUsage = $usage ?? new Usage(0, 0);
 
-        // The final StreamEnd carries usage summed across every tool-call
-        // step, matching laravel/ai's direction for streamed multi-step
-        // usage (Bedrock-style accumulation). The truncation heuristic still
-        // judges only the *current* step's completion tokens — a summed
-        // count would cross the per-request budget and misreport Length.
-        $resolvedUsage = ($accumulatedUsage ?? new Usage(0, 0))->add($stepUsage);
-
-        yield (new StreamEnd(
-            $this->generateEventId(),
-            $this->extractFinishReason(
+        // The truncation heuristic judges only this step's completion tokens
+        // against the per-request budget — the loop's summed usage would
+        // cross the budget and misreport Length.
+        return new StepResponse(
+            text: $currentText,
+            toolCalls: $toolCalls,
+            finishReason: $this->extractFinishReason(
                 ['finish_reason' => $finishReason ?? ''],
                 $stepUsage->completionTokens,
                 $this->resolveMaxTokens($provider, $options),
-            )->value,
-            $resolvedUsage,
-            time(),
-        ))->withInvocationId($invocationId);
+            ),
+            usage: $stepUsage,
+            meta: new Meta($provider->name(), $responseModel),
+            providerContentBlocks: filled($currentReasoning)
+                ? ['reasoning_content' => $currentReasoning]
+                : [],
+        );
     }
 
     /**
@@ -292,145 +272,6 @@ trait HandlesTextStreaming
             cacheReadInputTokens: UsageTokens::cachedTokens($usage) ?? 0,
             reasoningTokens: UsageTokens::reasoningTokens($usage) ?? 0,
         );
-    }
-
-    /**
-     * Handle tool calls detected during streaming.
-     */
-    protected function handleStreamingToolCalls(
-        string $invocationId,
-        Provider $provider,
-        string $model,
-        array $tools,
-        ?array $schema,
-        ?TextGenerationOptions $options,
-        array $mappedToolCalls,
-        string $currentText,
-        ?string $instructions,
-        array $originalMessages,
-        int $depth,
-        ?int $maxSteps,
-        array $priorChatMessages,
-        ?int $timeout = null,
-        string $currentReasoning = '',
-        ?Usage $accumulatedUsage = null,
-    ): Generator {
-        $toolResults = [];
-
-        foreach ($mappedToolCalls as $toolCall) {
-            $tool = $this->findTool($toolCall->name, $tools);
-
-            if ($tool === null) {
-                continue;
-            }
-
-            $result = $this->executeTool($tool, $toolCall->arguments);
-
-            $toolResult = new ToolResult(
-                $toolCall->id,
-                $toolCall->name,
-                $toolCall->arguments,
-                $result,
-                $toolCall->resultId,
-            );
-
-            $toolResults[] = $toolResult;
-
-            yield (new ToolResultEvent(
-                $this->generateEventId(),
-                $toolResult,
-                true,
-                null,
-                time(),
-            ))->withInvocationId($invocationId);
-        }
-
-        if ($depth + 1 < ($maxSteps ?? round(count($tools) * 1.5))) {
-            // Workers AI rejects assistant messages without a `content` field
-            // (even when only tool_calls are present); emit an empty string as
-            // the floor so streaming tool-call follow-ups don't 400. Matches
-            // MapsMessages::mapAssistantMessage on the non-streaming path.
-            $assistantMsg = [
-                'role' => 'assistant',
-                'content' => filled($currentText) ? $currentText : '',
-            ];
-
-            // Replay reasoning so multi-turn tool conversations preserve the
-            // model's chain of thought across the tool boundary.
-            if (filled($currentReasoning)) {
-                $assistantMsg['reasoning_content'] = $currentReasoning;
-            }
-
-            $assistantMsg['tool_calls'] = array_map(
-                fn (ToolCall $toolCall) => $this->serializeToolCallToChat($toolCall), $mappedToolCalls
-            );
-
-            $toolResultMessages = [];
-
-            foreach ($toolResults as $toolResult) {
-                $toolResultMessages[] = [
-                    'role' => 'tool',
-                    'tool_call_id' => $toolResult->resultId ?? $toolResult->id,
-                    'content' => $this->serializeToolResultOutput($toolResult->result),
-                ];
-            }
-
-            $updatedPriorMessages = [...$priorChatMessages, $assistantMsg, ...$toolResultMessages];
-
-            $chatMessages = [
-                ...$this->mapMessagesToChat($originalMessages, $instructions),
-                ...$updatedPriorMessages,
-            ];
-
-            // finalizeChatBody (in BuildsTextRequests) appends tools,
-            // response_format, sampling options, and providerOptions. Same
-            // helper the initial-turn and non-streaming follow-up paths use —
-            // single source of truth across the three sites that build chat
-            // request bodies.
-            $body = $this->relaxForcedToolChoice($this->finalizeChatBody(
-                [
-                    'model' => $model,
-                    'messages' => $chatMessages,
-                    'stream' => true,
-                    'stream_options' => ['include_usage' => true],
-                ],
-                provider: $provider,
-                tools: $tools,
-                schema: $schema,
-                options: $options,
-            ));
-
-            $response = $this->withErrorHandling(
-                $provider->name(),
-                fn () => $this->client($provider, $timeout)
-                    ->withOptions(['stream' => true])
-                    ->post('chat/completions', $body),
-            );
-
-            yield from $this->processTextStream(
-                $invocationId,
-                $provider,
-                $model,
-                $tools,
-                $schema,
-                $options,
-                $response->getBody(),
-                $instructions,
-                $originalMessages,
-                $depth + 1,
-                $maxSteps,
-                $updatedPriorMessages,
-                $timeout,
-                $accumulatedUsage,
-            );
-        } else {
-            yield (new StreamEnd(
-                $this->generateEventId(),
-                'stop',
-                $accumulatedUsage ?? new Usage(0, 0),
-                time(),
-            ))->withInvocationId($invocationId);
-        }
     }
 
     /**

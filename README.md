@@ -7,7 +7,7 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 - Reasoning content replay across tool-call turns.
 - `#[Strict]` JSON schema opt-in.
 - Provider options pass-through.
-- Sub-agent tools, and MCP tools on laravel/ai `^0.8`.
+- Sub-agent tools and MCP tools.
 - Streamed usage summed across tool-call steps.
 - Retry policy and AI Gateway session affinity.
 - Failover-ready: 429/402/502/503/504 map to laravel/ai's failoverable exceptions.
@@ -15,7 +15,9 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 ## Requirements
 
 - PHP `^8.3`
-- `laravel/ai ^0.7 || ^0.8`
+- `laravel/ai ^0.9`
+
+Need `laravel/ai ^0.7 || ^0.8`? Use `meirdick/laravel-cf-workersai ^0.5`. Version 0.6 migrates the gateway to laravel/ai 0.9's single-step `StepTextGateway` contract; the multi-step tool loop now runs in the SDK's `TextGenerationLoop`.
 
 ## Installation
 
@@ -82,11 +84,12 @@ $vectors = Embeddings::for(['hello', 'world'])
     ->generate(provider: 'workers-ai', model: '@cf/baai/bge-base-en-v1.5');
 ```
 
-Forward arbitrary fields with `providerOptions`:
+Forward arbitrary fields with `withProviderOptions` (named `providerOptions()` before laravel/ai 0.9):
 
 ```php
 Embeddings::for(['hello'])
-    ->generate(provider: 'workers-ai', providerOptions: ['encoding_format' => 'base64']);
+    ->withProviderOptions(['encoding_format' => 'base64'])
+    ->generate(provider: 'workers-ai');
 ```
 
 ## Streaming
@@ -215,7 +218,7 @@ The provider can be referenced as `workers-ai` (primary) or `workersai` (alias).
 
 ## Versioning
 
-This package follows [Semantic Versioning](https://semver.org/). Compatible with `laravel/ai ^0.7 || ^0.8` — the test suite runs against both bounds.
+This package follows [Semantic Versioning](https://semver.org/). Version 0.6+ requires `laravel/ai ^0.9` (the single-step `StepTextGateway` contract); use `^0.5` of this package for `laravel/ai ^0.7 || ^0.8`.
 
 ## License
 
