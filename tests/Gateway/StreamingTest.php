@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Laravel\Ai\Exceptions\StreamErrorException;
 use Laravel\Ai\Streaming\Events\Error;
 use Laravel\Ai\Streaming\Events\ReasoningDelta;
 use Laravel\Ai\Streaming\Events\ReasoningEnd;
@@ -221,11 +222,18 @@ test('streaming error event stops stream', function () {
         ),
     ]);
 
-    $events = $this->collectStreamEvents();
+    // Since laravel/ai 0.11 a stream that ends on an error event throws
+    // StreamErrorException (laravel/ai#870) instead of ending the run silently.
+    // The gateway's Error event travels on the exception.
+    try {
+        $this->collectStreamEvents();
 
-    expect($events)->toHaveCount(1)
-        ->and($events[0])->toBeInstanceOf(Error::class)
-        ->and($events[0]->type)->toBe('rate_limit_exceeded');
+        $this->fail('Expected StreamErrorException to be thrown.');
+    } catch (StreamErrorException $exception) {
+        expect($exception->getMessage())->toBe('Rate limit exceeded')
+            ->and($exception->error)->toBeInstanceOf(Error::class)
+            ->and($exception->error->type)->toBe('rate_limit_exceeded');
+    }
 });
 
 test('streaming captures usage from final chunk', function () {
