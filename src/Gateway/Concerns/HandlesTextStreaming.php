@@ -211,17 +211,14 @@ trait HandlesTextStreaming
 
         $stepUsage = $usage ?? new Usage(0, 0);
 
-        // The truncation heuristic judges only this step's completion tokens
-        // against the per-request budget — the loop's summed usage would
-        // cross the budget and misreport Length.
+        // Workers AI reports `length` accurately on the streamed finish chunk
+        // just as it does on the non-streaming path (re-measured 2026-09-09),
+        // so the reason is mapped as sent. The v0.6.1 completion-token
+        // heuristic is gone — see ParsesTextResponses::extractFinishReason.
         return new StepResponse(
             text: $currentText,
             toolCalls: $toolCalls,
-            finishReason: $this->extractFinishReason(
-                ['finish_reason' => $finishReason ?? ''],
-                $stepUsage->completionTokens,
-                $this->resolveMaxTokens($provider, $options),
-            ),
+            finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
             usage: $stepUsage,
             meta: new Meta($provider->name(), $responseModel),
             providerContentBlocks: filled($currentReasoning)

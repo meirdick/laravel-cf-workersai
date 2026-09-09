@@ -11,6 +11,7 @@ use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Providers\Provider;
+use Meirdick\WorkersAi\Attributes\ReasoningEffort;
 use Meirdick\WorkersAi\Gateway\WorkersAiGateway;
 
 /**
@@ -98,9 +99,17 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
         return $this->config['models']['text']['default'] ?? '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
     }
 
+    /**
+     * The model `#[UseCheapestModel]` resolves to.
+     *
+     * `@cf/meta/llama-3.1-8b-instruct` was the default through 0.6.1 and is
+     * now deprecated — Cloudflare answers `410 Model has been deprecated`
+     * (verified 2026-09-09), so every `#[UseCheapestModel]` call failed.
+     * Override with `models.text.cheapest`.
+     */
     public function cheapestTextModel(): string
     {
-        return $this->config['models']['text']['cheapest'] ?? '@cf/meta/llama-3.1-8b-instruct';
+        return $this->config['models']['text']['cheapest'] ?? '@cf/meta/llama-3.2-3b-instruct';
     }
 
     public function smartestTextModel(): string
@@ -122,10 +131,14 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
      * Default `max_completion_tokens` to send when the agent (or the call's
      * `TextGenerationOptions`) doesn't set one.
      *
-     * Cloudflare's `/v1/chat/completions` defaults to **256 tokens** when the
-     * field is omitted — far too small for any non-trivial structured output,
-     * which truncates mid-JSON and arrives with a misreported
-     * `finish_reason: "stop"`. The package ships 4096 as a sane default;
+     * Cloudflare defaults to **256 completion tokens** when the field is
+     * omitted — far too small for any non-trivial structured output, which
+     * truncates mid-JSON. Verified live 2026-09-09: with no cap,
+     * `@cf/meta/llama-3.3-70b-instruct-fp8-fast` and `@cf/openai/gpt-oss-120b`
+     * both stopped at exactly 256 completion tokens with
+     * `finish_reason: "length"`. (The cap is not universal —
+     * `@cf/zai-org/glm-5.3-flash` ran to 8,190 tokens over 369 seconds — which
+     * is a second reason to always send a budget.) The package ships 4096;
      * users can set `default_max_tokens` in their provider config block
      * (or `null` to fall back to Cloudflare's default).
      */
@@ -154,5 +167,59 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     public function structuredOutputRetries(): int
     {
         return max(0, (int) ($this->config['structured_output_retries'] ?? 2));
+    }
+
+    /**
+     * The `reasoning_effort` to send when an agent does not declare one with
+     * `#[ReasoningEffort]` and does not set it through `providerOptions()`.
+     *
+     * Null (the default) sends nothing and lets the model decide. Set
+     * `reasoning_effort => 'low'` in the provider config to cap the chain of
+     * thought across every agent on this provider — usually the right default
+     * for latency-sensitive work. See the ReasoningEffort attribute for the
+     * measured effect and the list of models that honour it.
+     */
+    public function defaultReasoningEffort(): ?string
+    {
+        $value = $this->config['reasoning_effort'] ?? null;
+
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        $value = trim($value);
+
+        ReasoningEffort::validate($value);
+
+        return $value;
+    }
+
+    /**
+     * Whether a step that returned neither text nor tool calls should throw.
+     *
+     * Defaults to **true**. A Workers AI reasoning model that spends its whole
+     * completion budget thinking returns HTTP 200 with `content: null`, which
+     * laravel/ai surfaces as an empty string and an empty `toArray()`. Nothing
+     * downstream can tell that apart from a real answer, so the package treats
+     * it as a failure. Set `throw_on_empty_response => false` to receive the
+     * empty response instead.
+     */
+    public function throwOnEmptyResponse(): bool
+    {
+        return (bool) ($this->config['throw_on_empty_response'] ?? true);
+    }
+
+    /**
+     * Whether a step that stopped at the completion-token budget should throw.
+     *
+     * Defaults to **false**, because a truncated answer is still partial data
+     * a caller may legitimately want, and `FinishReason::Length` is reported
+     * accurately enough to branch on yourself. Set
+     * `throw_on_truncation => true` when a partial answer is worse than no
+     * answer — extraction and drafting pipelines usually want this on.
+     */
+    public function throwOnTruncation(): bool
+    {
+        return (bool) ($this->config['throw_on_truncation'] ?? false);
     }
 }

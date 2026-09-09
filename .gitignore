@@ -12,3 +12,4 @@ composer.lock
 .env
 .env.local
 .env.testing
+.wrangler/

@@ -9,6 +9,7 @@ use Laravel\Ai\Gateway\StepContext;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\ObjectSchema;
 use Laravel\Ai\Providers\Provider;
+use Meirdick\WorkersAi\Attributes\ReasoningEffort;
 use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 trait BuildsTextRequests
@@ -64,10 +65,20 @@ trait BuildsTextRequests
             'top_p' => $options?->topP,
         ]));
 
+        $resolvedEffort = $this->resolveReasoningEffort($provider, $options);
+
+        if (! is_null($resolvedEffort)) {
+            $body['reasoning_effort'] = $resolvedEffort;
+        }
+
         $providerOptions = $options?->providerOptions($provider->driver());
 
         if (filled($providerOptions)) {
             $body = array_merge($body, Arr::except($providerOptions, ['session_affinity']));
+        }
+
+        if (array_key_exists('reasoning_effort', $body)) {
+            ReasoningEffort::validate((string) $body['reasoning_effort']);
         }
 
         $body = $this->guardThinkingTokenBudget($body);
@@ -79,6 +90,35 @@ trait BuildsTextRequests
         }
 
         return $body;
+    }
+
+    /**
+     * Resolve the `reasoning_effort` to send with this step.
+     *
+     * Precedence: the agent's `#[ReasoningEffort]` attribute, then the
+     * provider's `reasoning_effort` config default. An explicit
+     * `reasoning_effort` returned from `providerOptions()` beats both, since
+     * provider options are merged over the body afterwards.
+     *
+     * Why this is worth a first-class knob rather than leaving it to provider
+     * options: unset, the models on Workers AI choose their own effort and
+     * choose it badly. Measured on `@cf/openai/gpt-oss-120b` (2026-09-09),
+     * one two-sentence question cost 1,564 reasoning characters and 7.4s at
+     * `high` against 20 characters and 1.4s at `low`, with no loss of answer
+     * quality. Every neuron spent on the chain of thought is billed, and on a
+     * reasoning model it is also a token not available for the answer.
+     */
+    protected function resolveReasoningEffort(Provider $provider, ?TextGenerationOptions $options): ?string
+    {
+        $fromAgent = ReasoningEffort::resolveFrom($options?->agent);
+
+        if (! is_null($fromAgent)) {
+            return $fromAgent;
+        }
+
+        return $provider instanceof WorkersAiProvider
+            ? $provider->defaultReasoningEffort()
+            : null;
     }
 
     /**

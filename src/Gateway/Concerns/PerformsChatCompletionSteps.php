@@ -8,6 +8,9 @@ use Laravel\Ai\Gateway\StepContext;
 use Laravel\Ai\Gateway\StepResponse;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\Responses\Data\FinishReason;
+use Meirdick\WorkersAi\Exceptions\EmptyResponseException;
+use Meirdick\WorkersAi\Exceptions\TruncatedResponseException;
+use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 /**
  * Workers AI's counterpart to laravel/ai's
@@ -39,7 +42,7 @@ trait PerformsChatCompletionSteps
         ?int $timeout,
         StepContext $stepContext,
     ): StepResponse {
-        $this->validateModelName($provider, $model);
+        $model = $this->resolveModelName($provider, $model);
 
         $body = $this->buildStepBody($provider, $model, $instructions, $messages, $tools, $schema, $options, $stepContext);
 
@@ -63,7 +66,51 @@ trait PerformsChatCompletionSteps
             $result = $this->performTextStep($provider, $body, $options, $timeout, true);
         }
 
+        $this->guardAgainstUnusableStep($provider, $result, $body);
+
         return $result;
+    }
+
+    /**
+     * Reject a step that came back HTTP 200 but carries nothing usable.
+     *
+     * laravel/ai's TextGenerationLoop does not branch on `FinishReason::Length`
+     * at all (verified against v0.11.2) — a truncated answer is returned as an
+     * ordinary success, and a `content: null` reasoning response arrives as an
+     * empty string with `toArray()` yielding `[]`. In an unattended pipeline
+     * that is indistinguishable from a genuine short answer, which makes it
+     * the most expensive failure mode Workers AI has. Both checks look at the
+     * step the model actually returned, so a tool-calling turn with no text is
+     * never mistaken for an empty answer.
+     *
+     * @param  array<string, mixed>  $body  the request body that produced $result
+     *
+     * @throws EmptyResponseException
+     * @throws TruncatedResponseException
+     */
+    protected function guardAgainstUnusableStep(TextProvider $provider, StepResponse $result, array $body): void
+    {
+        if (! $provider instanceof WorkersAiProvider) {
+            return;
+        }
+
+        $hasNothing = blank($result->text) && blank($result->toolCalls);
+
+        if ($hasNothing && $provider->throwOnEmptyResponse()) {
+            throw EmptyResponseException::forStep(
+                $body['model'] ?? null,
+                $result->finishReason->value,
+                $result->usage->reasoningTokens,
+            );
+        }
+
+        if ($result->finishReason === FinishReason::Length && $provider->throwOnTruncation()) {
+            throw TruncatedResponseException::forStep(
+                $result->usage->completionTokens,
+                $body['max_completion_tokens'] ?? null,
+                $body['model'] ?? null,
+            );
+        }
     }
 
     /**
@@ -81,7 +128,7 @@ trait PerformsChatCompletionSteps
         ?int $timeout,
         StepContext $stepContext,
     ): Generator {
-        $this->validateModelName($provider, $model);
+        $model = $this->resolveModelName($provider, $model);
 
         $body = $this->buildStepBody($provider, $model, $instructions, $messages, $tools, $schema, $options, $stepContext);
 

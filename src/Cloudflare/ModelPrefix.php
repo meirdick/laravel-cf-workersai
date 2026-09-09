@@ -10,25 +10,28 @@ use InvalidArgumentException;
  * Validates that a model ID matches the endpoint it's being sent to.
  *
  * Cloudflare exposes Workers AI under three URL shapes (direct API, AI
- * Gateway provider path, AI Gateway `/compat`). The first two accept bare
- * model IDs (`@cf/meta/llama-3.3-...`); the third requires a `workers-ai/`
- * prefix because `/compat` is a multi-provider routing endpoint that uses
- * the prefix to pick the upstream.
+ * Gateway provider path, AI Gateway `/compat`). `/compat` is a multi-provider
+ * routing endpoint that uses a `workers-ai/` prefix to pick the upstream; the
+ * other two take bare model IDs (`@cf/meta/llama-3.3-...`).
  *
- * Misconfigurations in either direction silently 404 from Cloudflare:
- *   - bare model on `/compat`         → "model not found"
- *   - prefixed model on `/v1` paths   → "model not found"
- *
- * Both are wire-shape mismatches with no useful error message from the
- * upstream. We pre-validate so users get a clear "you're hitting the wrong
- * endpoint for this model ID" instead of a cryptic 404.
+ * The two directions are NOT symmetric, measured live (2026-09-09):
+ *   - bare model on `/compat`        → HTTP 200. It resolves fine. Through
+ *     v0.6.1 this package threw on it, rejecting a working configuration.
+ *     It is now normalized to the prefixed form instead, so routing stays
+ *     explicit and multi-provider gateways behave predictably.
+ *   - prefixed model on the direct API → HTTP 400 "No such model
+ *     workers-ai/@cf/meta/...". A genuine mismatch, so it still throws with
+ *     the fix named rather than surfacing Cloudflare's opaque error.
  */
 final class ModelPrefix
 {
     public const PREFIX = 'workers-ai/';
 
     /**
-     * Throws if `$model` is incompatible with the endpoint at `$url`.
+     * Throws if `$model` cannot work against the endpoint at `$url`.
+     *
+     * Only the prefixed-model-on-a-bare-path direction is fatal; a bare model
+     * on `/compat` is resolved by `normalize()` instead.
      *
      * @throws InvalidArgumentException
      */
@@ -36,15 +39,6 @@ final class ModelPrefix
     {
         $isCompat = BaseUrl::isCompatEndpoint($url);
         $hasPrefix = str_starts_with($model, self::PREFIX);
-
-        if ($isCompat && ! $hasPrefix) {
-            throw new InvalidArgumentException(
-                "Workers AI model '{$model}' is missing the `workers-ai/` prefix required by the `/compat` endpoint. "
-                ."Either prefix the model name (e.g. '".self::PREFIX.$model."'), or switch to the direct API by "
-                ."configuring `account_id` (and optionally `gateway`) instead of an explicit `/compat` URL — those "
-                .'paths take bare model IDs.'
-            );
-        }
 
         if (! $isCompat && $hasPrefix) {
             $bare = substr($model, strlen(self::PREFIX));
@@ -60,8 +54,8 @@ final class ModelPrefix
 
     /**
      * Add the `workers-ai/` prefix iff the URL targets `/compat` and the
-     * model doesn't already have it. Used by the Prism path so user code
-     * can pass bare IDs and have them auto-prefixed at request time.
+     * model doesn't already have it, so user code and `#[UseCheapestModel]`
+     * style defaults can carry bare IDs regardless of endpoint shape.
      */
     public static function normalize(string $url, string $model): string
     {

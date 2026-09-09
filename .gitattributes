@@ -7,3 +7,4 @@
 /.editorconfig     export-ignore
 /phpunit.xml       export-ignore
 /CHANGELOG.md      export-ignore
+/.wrangler         export-ignore

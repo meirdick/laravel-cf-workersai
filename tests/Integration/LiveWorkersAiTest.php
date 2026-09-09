@@ -19,7 +19,7 @@ use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Tests\Fixtures\Agents\AssistantAgent;
 
-const E2E_TEXT_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const E2E_TEXT_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const E2E_EMBED_MODEL = '@cf/baai/bge-base-en-v1.5';
 
 describe('direct Workers AI API', function () {

@@ -47,6 +47,13 @@ final class RetryPolicy
                 }
 
                 if ($exception instanceof RequestException) {
+                    // 408 is deliberately absent. Cloudflare's gateway returns
+                    // it when the *generation* ran too long, not when the
+                    // network blipped — measured live on 2026-09-09, a
+                    // 24,000-token cap on @cf/zai-org/glm-5.3-flash produced
+                    // `408 Request timeout` after 709 seconds. Retrying that
+                    // costs another 709 seconds to reach the same answer.
+                    // Lower the token cap or split the work instead.
                     return in_array($exception->response->getStatusCode(), [502, 503, 504], true);
                 }
 

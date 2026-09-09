@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Streaming\Events\StreamEnd;
+use Meirdick\WorkersAi\Exceptions\TruncatedResponseException;
 use Tests\Gateway\WorkersAiHelpers;
 
 use function Laravel\Ai\agent;
@@ -17,29 +18,26 @@ beforeEach(function () {
     ]]);
 });
 
-/**
- * Cloudflare's `/v1/chat/completions` misreports truncated completions as
- * `finish_reason: "stop"` with `completion_tokens` equal to the requested
- * `max_completion_tokens`. The package detects this pattern and normalizes
- * the finish reason to `Length` so laravel/ai's length-aware retry primitives
- * can fire. Without this signal, agents quietly receive truncated JSON.
- */
-test('stop at max_completion_tokens budget is normalized to Length', function () {
+/*
+|--------------------------------------------------------------------------
+| Finish-reason mapping
+|--------------------------------------------------------------------------
+|
+| Through v0.6.1 the package assumed Cloudflare misreported truncation as
+| `finish_reason: "stop"` and coerced `stop`-at-budget into `Length`. Measured
+| live against AI Gateway /compat on 2026-09-09, Workers AI reports `length`
+| correctly: llama-3.3-70b, gpt-oss-120b and glm-5.3-flash all returned
+| `"length"` under a 16-token cap, as did every model truncated at
+| Cloudflare's 256-token default. The coercion is gone and the raw reason is
+| trusted, so a model that legitimately finishes on its last budgeted token is
+| no longer misreported as truncated.
+|
+*/
+test('explicit length finish_reason maps to Length', function () {
     Http::fake([
-        'api.cloudflare.com/*' => Http::response([
-            'id' => 'chatcmpl-trunc',
-            'object' => 'chat.completion',
-            'model' => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-            'choices' => [[
-                'index' => 0,
-                'message' => ['role' => 'assistant', 'content' => '{"foo":'],
-                'finish_reason' => 'stop',
-            ]],
-            'usage' => [
-                'prompt_tokens' => 10,
-                'completion_tokens' => 4096,
-            ],
-        ]),
+        'api.cloudflare.com/*' => Http::response(
+            workersAiTruncatedResponse('partial', completionTokens: 4096),
+        ),
     ]);
 
     $response = agent()->prompt('Hello', provider: 'workersai');
@@ -47,34 +45,18 @@ test('stop at max_completion_tokens budget is normalized to Length', function ()
     expect($response->steps->last()->finishReason)->toBe(FinishReason::Length);
 });
 
-test('stop well under the budget stays as Stop', function () {
-    // Default fixture: completion_tokens=5, package default max=4096
-    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
-
-    $response = agent()->prompt('Hello', provider: 'workersai');
-
-    expect($response->steps->last()->finishReason)->toBe(FinishReason::Stop);
-});
-
-test('stop with no resolved max_tokens budget stays as Stop', function () {
-    // User opts out of the package default — the heuristic can't fire without
-    // a budget to compare against.
-    config(['ai.providers.workersai' => [
-        ...config('ai.providers.workersai'),
-        'default_max_tokens' => null,
-    ]]);
-
+test('stop at the completion-token budget is no longer coerced to Length', function () {
     Http::fake([
         'api.cloudflare.com/*' => Http::response([
-            'id' => 'chatcmpl-no-budget',
+            'id' => 'chatcmpl-exact',
             'object' => 'chat.completion',
             'model' => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
             'choices' => [[
                 'index' => 0,
-                'message' => ['role' => 'assistant', 'content' => 'Hi'],
+                'message' => ['role' => 'assistant', 'content' => 'A complete answer.'],
                 'finish_reason' => 'stop',
             ]],
-            'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 9999],
+            'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 4096],
         ]),
     ]);
 
@@ -83,12 +65,20 @@ test('stop with no resolved max_tokens budget stays as Stop', function () {
     expect($response->steps->last()->finishReason)->toBe(FinishReason::Stop);
 });
 
-test('streaming normalizes stop-at-budget to length', function () {
+test('stop well under the budget stays as Stop', function () {
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    $response = agent()->prompt('Hello', provider: 'workersai');
+
+    expect($response->steps->last()->finishReason)->toBe(FinishReason::Stop);
+});
+
+test('streaming maps the finish chunk reason as sent', function () {
     Http::fake([
         'api.cloudflare.com/*' => Http::response(
             body: $this->ssePayload([
                 $this->chatChunk(['role' => 'assistant', 'content' => '{"foo":']),
-                $this->chatChunkFinish('stop', ['prompt_tokens' => 10, 'completion_tokens' => 4096]),
+                $this->chatChunkFinish('length', ['prompt_tokens' => 10, 'completion_tokens' => 4096]),
                 '[DONE]',
             ]),
             status: 200,
@@ -103,22 +93,99 @@ test('streaming normalizes stop-at-budget to length', function () {
     expect($streamEnd->reason)->toBe(FinishReason::Length->value);
 });
 
-test('explicit length finish_reason still maps to Length', function () {
+test('streaming stop at budget is not coerced to Length', function () {
     Http::fake([
-        'api.cloudflare.com/*' => Http::response([
-            'id' => 'chatcmpl-len',
-            'object' => 'chat.completion',
-            'model' => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
-            'choices' => [[
-                'index' => 0,
-                'message' => ['role' => 'assistant', 'content' => 'partial'],
-                'finish_reason' => 'length',
-            ]],
-            'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 4096],
-        ]),
+        'api.cloudflare.com/*' => Http::response(
+            body: $this->ssePayload([
+                $this->chatChunk(['role' => 'assistant', 'content' => 'Done.']),
+                $this->chatChunkFinish('stop', ['prompt_tokens' => 10, 'completion_tokens' => 4096]),
+                '[DONE]',
+            ]),
+            status: 200,
+            headers: ['Content-Type' => 'text/event-stream'],
+        ),
+    ]);
+
+    $events = $this->collectStreamEvents();
+
+    $streamEnd = array_values(array_filter($events, fn ($e) => $e instanceof StreamEnd))[0];
+
+    expect($streamEnd->reason)->toBe(FinishReason::Stop->value);
+});
+
+/*
+|--------------------------------------------------------------------------
+| throw_on_truncation
+|--------------------------------------------------------------------------
+|
+| laravel/ai's TextGenerationLoop never branches on FinishReason::Length, so a
+| truncated answer reaches the caller looking like a complete one. Opting in
+| turns it into a catchable failure.
+|
+*/
+test('a truncated step throws when throw_on_truncation is enabled', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'throw_on_truncation' => true,
+    ]]);
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            workersAiTruncatedResponse('{"name":"Ada","occupa', completionTokens: 4096),
+        ),
+    ]);
+
+    agent()->prompt('Hello', provider: 'workersai');
+})->throws(TruncatedResponseException::class, 'truncated the response');
+
+test('the truncation exception names the model and both token counts', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'throw_on_truncation' => true,
+    ]]);
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            workersAiTruncatedResponse('partial', completionTokens: 4096),
+        ),
+    ]);
+
+    try {
+        agent()->prompt('Hello', provider: 'workersai');
+    } catch (TruncatedResponseException $e) {
+        expect($e->getMessage())
+            ->toContain('@cf/meta/llama-3.3-70b-instruct-fp8-fast')
+            ->toContain('completion_tokens: 4096')
+            ->toContain('max_completion_tokens: 4096');
+
+        return;
+    }
+
+    $this->fail('Expected a TruncatedResponseException.');
+});
+
+test('truncation does not throw by default', function () {
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            workersAiTruncatedResponse('partial', completionTokens: 4096),
+        ),
     ]);
 
     $response = agent()->prompt('Hello', provider: 'workersai');
 
-    expect($response->steps->last()->finishReason)->toBe(FinishReason::Length);
+    expect($response->text)->toBe('partial')
+        ->and($response->steps->last()->finishReason)->toBe(FinishReason::Length);
+});
+
+test('a complete answer never throws even with throw_on_truncation enabled', function () {
+    config(['ai.providers.workersai' => [
+        ...config('ai.providers.workersai'),
+        'throw_on_truncation' => true,
+    ]]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    $response = agent()->prompt('Hello', provider: 'workersai');
+
+    expect($response->text)->toBe('Hello from Workers AI');
 });

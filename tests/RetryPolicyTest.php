@@ -35,6 +35,13 @@ test('connection failures are retried', function (string $message) {
     'reset' => 'cURL error 56: Recv failure: Connection reset by peer',
 ]);
 
+/*
+ * 408 belongs with the client errors, not the retryable ones. Cloudflare's
+ * gateway returns it when the *generation* ran too long rather than when the
+ * network blipped — measured live 2026-09-09, a 24,000-token cap on
+ * @cf/zai-org/glm-5.3-flash produced `408 Request timeout` after 709 seconds.
+ * Retrying costs another 709 seconds to reach the same failure.
+ */
 test('transient gateway statuses are retried, client errors are not', function (int $status, bool $expected) {
     $exception = new RequestException(
         new Response(new Psr7Response($status, [], '{}'))
@@ -47,5 +54,6 @@ test('transient gateway statuses are retried, client errors are not', function (
     '504' => [504, true],
     '400' => [400, false],
     '401' => [401, false],
+    '408' => [408, false],
     '429' => [429, false],
 ]);

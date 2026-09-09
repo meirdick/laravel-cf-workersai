@@ -73,7 +73,13 @@ test('embeddings request sends bearer token', function () {
     });
 });
 
-test('embeddings validates model name on compat endpoint', function () {
+/*
+ * Embeddings are the reason the AI Gateway config defaults to `/compat`: the
+ * provider-specific gateway path served them on one gateway and answered 401
+ * on another (measured 2026-09-09), while `/compat` worked on both. The model
+ * ID is therefore prefixed for the `/compat` route rather than rejected.
+ */
+test('embeddings prefix the model name on a compat endpoint', function () {
     // Explicit url-only config — must not include account_id, since the
     // shared BaseUrl resolver rejects ambiguous configs that mix both.
     config(['ai.providers.workersai' => [
@@ -83,8 +89,17 @@ test('embeddings validates model name on compat endpoint', function () {
         'url' => 'https://gateway.ai.cloudflare.com/v1/abc/gw/compat',
     ]]);
 
+    Http::fake(['gateway.ai.cloudflare.com/*' => fakeWorkersAiEmbeddingsResponse()]);
+
     Embeddings::for(['Hello'])->generate(provider: 'workersai');
-})->throws(\Laravel\Ai\Exceptions\AiException::class, 'is missing the `workers-ai/` prefix');
+
+    Http::assertSent(function (Request $request) {
+        $model = json_decode($request->body(), true)['model'];
+
+        return str_starts_with($model, 'workers-ai/@cf/')
+            && $request->url() === 'https://gateway.ai.cloudflare.com/v1/abc/gw/compat/embeddings';
+    });
+});
 
 test('embeddings forward caller providerOptions into the request body', function () {
     // laravel/ai 0.9 renamed the embeddings builder method from

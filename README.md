@@ -9,15 +9,33 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 - Provider options pass-through.
 - Sub-agent tools and MCP tools.
 - Streamed usage summed across tool-call steps.
+- `reasoning_effort` as a first-class knob, per provider and per agent.
+- Empty- and truncated-response detection, so a silent HTTP 200 with no answer becomes a catchable exception.
+- Cloudflare's `neurons` billing figure surfaced as an event.
 - Retry policy and AI Gateway session affinity.
 - Failover-ready: 429/402/502/503/504 map to laravel/ai's failoverable exceptions.
 
 ## Requirements
 
 - PHP `^8.3`
-- `laravel/ai ^0.9`
+- `laravel/ai ^0.9 || ^0.10 || ^0.11` (tested against v0.11.2)
 
-Need `laravel/ai ^0.7 || ^0.8`? Use `meirdick/laravel-cf-workersai ^0.5`. Version 0.6 migrates the gateway to laravel/ai 0.9's single-step `StepTextGateway` contract; the multi-step tool loop now runs in the SDK's `TextGenerationLoop`.
+Need `laravel/ai ^0.7 || ^0.8`? Use `meirdick/laravel-cf-workersai ^0.5`.
+
+## Do you need this package?
+
+Be honest with yourself first. laravel/ai's built-in `openai-compatible` driver points at Cloudflare's `/compat` endpoint and works. If all you do is generate text from one model with an explicit `#[MaxTokens]`, use it and skip this package.
+
+Reach for this package when you want:
+
+- **The endpoint and model-name shapes resolved for you**, including an AI Gateway path that 401s on embeddings under some gateway settings, and Authenticated Gateway support (see below).
+- **A sane completion-token default.** The built-in driver sends `max_tokens` only when the agent carries `#[MaxTokens]`; without it Cloudflare caps most models at 256 tokens.
+- **Failure on a non-answer.** A reasoning model that burns its budget thinking returns HTTP 200, `content: null`. Nothing in laravel/ai treats that as an error. This package throws.
+- **`reasoning_effort`.** laravel/ai has no concept of it; it is a 5x latency difference on the models measured.
+- **Neuron accounting.** Token counts are not what Cloudflare bills.
+- **Embeddings, tool loops, streaming and structured output** against Workers AI's quirks, rather than the generic OpenAI shape.
+
+What it does **not** solve: HTTP 408s from the gateway on very long generations, and HTTP 429 under wide fan-out. Those are yours to handle. See [Operational limits](#operational-limits).
 
 ## Installation
 
@@ -47,17 +65,125 @@ Add a `workers-ai` provider to `config/ai.php`:
 
 ### `default_max_tokens`
 
-Cloudflare's `/v1/chat/completions` defaults to **256 tokens** when `max_completion_tokens` is omitted — far too small for any non-trivial structured output, which then arrives mid-JSON with a misreported `finish_reason: "stop"`. The package sends `4096` by default to defuse this. Override the value per-provider, or set it to `null` to fall back to Cloudflare's endpoint default. Per-call `#[MaxTokens(...)]` (or `TextGenerationOptions::$maxTokens`) always wins.
+Cloudflare caps a completion at **256 tokens** when `max_completion_tokens` is omitted — far too small for any non-trivial structured output, which then arrives mid-JSON. Verified live on 2026-09-09: with no cap, `@cf/meta/llama-3.3-70b-instruct-fp8-fast` and `@cf/openai/gpt-oss-120b` both stopped at exactly 256 completion tokens. laravel/ai's built-in `openai-compatible` driver sends `max_tokens` only when the agent carries `#[MaxTokens]`, so an agent without one runs into this on every call.
 
-The package also normalizes Cloudflare's misreported `stop`-at-budget into `FinishReason::Length` so laravel/ai's length-aware retry primitives can react to truncated completions.
+The package sends `4096` by default. Override it per provider, or set it to `null` to fall back to Cloudflare's endpoint default. Per-call `#[MaxTokens(...)]` (or `TextGenerationOptions::$maxTokens`) always wins.
+
+The cap is not universal, which is a second reason to always send a budget: `@cf/zai-org/glm-5.3-flash` with no cap ran to 8,190 completion tokens over **369 seconds**.
+
+> **Correction to earlier releases.** Through v0.6.1 this README claimed Cloudflare misreports truncation as `finish_reason: "stop"`, and the package coerced `stop`-at-budget into `FinishReason::Length` to compensate. Re-measured on AI Gateway `/compat`: that is not what happens. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/openai/gpt-oss-120b` and `@cf/zai-org/glm-5.3-flash` all returned `finish_reason: "length"` under a 16-token cap, as did every model truncated at the 256-token default. **Truncation is reported correctly.** The coercion was removed in 0.7.0 — it was redundant and could misfire on a model that legitimately finished on its last budgeted token.
 
 ### Endpoint resolution
 
 There are three ways to configure the endpoint, in priority order:
 
-1. **`url`** (explicit). When set, all requests go to this URL. Useful for `/compat` or self-hosted gateways.
-2. **`account_id` + `gateway`**. Routes through `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/workers-ai/v1/...` — get AI Gateway's caching, retries, cost tracking.
+1. **`url`** (explicit). All requests go to this URL. Use it for `/compat` or a self-hosted gateway.
+2. **`account_id` + `gateway`**. Routes through `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat/...` — AI Gateway's caching, retries, cost tracking and request logs.
 3. **`account_id` only**. Hits the direct Workers AI API at `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1/...`.
+
+#### `/compat` versus the provider path
+
+Cloudflare's AI Gateway exposes Workers AI two ways, and they are not interchangeable:
+
+| Path | Chat completions | Embeddings | Model ID |
+|---|---|---|---|
+| `<gateway>/compat` | 200 | 200 | `workers-ai/@cf/...` or bare |
+| `<gateway>/workers-ai/v1` | 200 | 200 **or 401**, see below | bare `@cf/...` |
+| direct `/client/v4/accounts/<id>/ai/v1` | 200 | 200 | bare `@cf/...` |
+
+Measured 2026-09-09 across two AI Gateways on the same account. On the gateway with **Authenticated Gateway** enabled (`authentication: true`), `/workers-ai/v1/embeddings` answered `401 Authentication error` — while chat completions on that same gateway, and both operations on `/compat`, succeeded. Two different API tokens gave identical results, so the failure tracks the gateway's configuration, not the credential. On the gateway with the setting off, the provider path served embeddings fine.
+
+The mechanism is not fully pinned down: an authenticated gateway also rejects `/compat` requests that omit `cf-aig-authorization`, so enforcement is evidently not uniform across sub-paths. What is clear is that **`/compat` was the only shape that worked on every gateway tested**, which is why the `gateway` config resolves to it as of 0.7.0. Set `gateway_path => 'workers-ai/v1'` to opt back in.
+
+#### Authenticated Gateway
+
+If your gateway has Authenticated Gateway turned on, Cloudflare needs a gateway-issued token in `cf-aig-authorization` **in addition to** your Workers AI token. Set `gateway_token`:
+
+```php
+'workers-ai' => [
+    'key'           => env('CLOUDFLARE_AI_API_TOKEN'),
+    'account_id'    => env('CLOUDFLARE_ACCOUNT_ID'),
+    'gateway'       => env('CLOUDFLARE_AI_GATEWAY'),
+    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+],
+```
+
+Omit it for an unauthenticated gateway and the header is not sent. Without it on an authenticated gateway you get a bare `{"code":10000,"message":"Authentication error"}` that names neither the gateway nor the missing header — the package could not send this header at all before 0.7.0.
+
+`/compat` is a multi-provider routing endpoint, so model IDs there carry a `workers-ai/` prefix. The package adds it automatically: keep writing bare `@cf/...` IDs everywhere and the right form goes on the wire. (A bare ID posted to `/compat` does in fact resolve — through 0.6.1 this package incorrectly threw on it. A prefixed ID posted to a bare path genuinely fails with `400 No such model`, and still throws.)
+
+### Reasoning effort
+
+`/compat` accepts OpenAI's `reasoning_effort` field. laravel/ai does not send it — the string does not appear anywhere in v0.11.2 — and left unset, Workers AI's reasoning models choose their own effort and choose it badly.
+
+Measured on `@cf/openai/gpt-oss-120b`, one two-sentence question, 2026-09-09:
+
+| `reasoning_effort` | Reasoning | Answer | Wall time | Neurons |
+|---|---|---|---|---|
+| `low` | 20 chars | 363 chars | 1.4s | 9.6 |
+| unset | 104 chars | 433 chars | 2.6s | 11.3 |
+| `high` | 1,564 chars | 296 chars | 7.4s | 31.4 |
+
+The `low` answer was not worse. Set it per provider:
+
+```php
+'workers-ai' => [
+    // ...
+    'reasoning_effort' => 'low',   // low | medium | high
+],
+```
+
+Or per agent, which wins over the provider default:
+
+```php
+use Meirdick\WorkersAi\Attributes\ReasoningEffort;
+
+#[ReasoningEffort(ReasoningEffort::LOW)]
+class DraftingAgent implements Agent { /* ... */ }
+```
+
+An explicit `reasoning_effort` returned from `providerOptions()` beats both.
+
+Only `low`, `medium` and `high` are accepted — Cloudflare answers `400` for OpenAI's `none` and `minimal`, so the package rejects them before the request.
+
+**Not every model honours it.** Measured:
+
+| Model | Behaviour |
+|---|---|
+| `@cf/openai/gpt-oss-120b` | Graded properly. The only model measured whose reasoning stays proportionate to the prompt. |
+| `@cf/zai-org/glm-5.3-flash` | Binary: any value suppresses reasoning entirely (1,240 chars unset → 0 at `low` *and* `high`). |
+| `@cf/zai-org/glm-4.7-flash` | Ignored. `low` produced *more* reasoning than unset (6,012 vs 4,003 chars); both calls took ~29s. |
+
+### Detecting a non-answer
+
+laravel/ai's `TextGenerationLoop` never branches on `FinishReason::Length` — a truncated answer is returned as an ordinary success, and a `content: null` response arrives as an empty string with `toArray()` yielding `[]`. In an unattended pipeline that is indistinguishable from a real short answer, which makes it the most expensive failure Workers AI has.
+
+```php
+'workers-ai' => [
+    // ...
+    'throw_on_empty_response' => true,   // default: true
+    'throw_on_truncation'     => false,  // default: false
+],
+```
+
+- **`throw_on_empty_response`** (default **on**) throws `Meirdick\WorkersAi\Exceptions\EmptyResponseException` when a step returns neither text nor tool calls. Reproduced live on `@cf/openai/gpt-oss-120b`: a 16-token budget gives `finish_reason: "length"`, `content: null`, HTTP 200. A tool-calling turn with no text is not affected.
+- **`throw_on_truncation`** (default **off**) throws `Meirdick\WorkersAi\Exceptions\TruncatedResponseException` on any `FinishReason::Length`. Turn it on for extraction and drafting, where half an answer is worse than none.
+
+Both exceptions extend `Laravel\Ai\Exceptions\AiException` and name the model and token counts.
+
+### Tracking real cost
+
+Cloudflare meters Workers AI in **neurons**, not tokens, and returns one figure per call under `usage.neurons` on every endpoint shape. `Laravel\Ai\Responses\Data\Usage` is five fixed integer counters with no extensible field and `Meta` has no arbitrary bag, so there is nowhere in the SDK's response objects to put it. The package dispatches it instead:
+
+```php
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
+
+Event::listen(WorkersAiUsageReported::class, function (WorkersAiUsageReported $event) {
+    Spend::record($event->model, $event->neurons);
+});
+```
+
+One event per model call, including each step of a tool loop. Anything costing Workers AI from token counts alone is costing the wrong number.
 
 ## Quickstart
 
@@ -102,7 +228,17 @@ foreach (agent('helper')->streamed('Tell me a story.', provider: 'workers-ai') a
 }
 ```
 
-Reasoning-capable models (e.g. Kimi K2.5) emit `ReasoningStart` → `ReasoningDelta` → `ReasoningEnd` events before text.
+Reasoning-capable models emit `ReasoningStart` → `ReasoningDelta` → `ReasoningEnd` events before text.
+
+Reasoning arrives under a different key depending on the model, and the package normalizes all of them. Measured 2026-09-09:
+
+| Model | Reasoning field |
+|---|---|
+| `@cf/zai-org/glm-5.3-flash` | `reasoning_content` |
+| `@cf/openai/gpt-oss-120b` | both `reasoning` and `reasoning_content`, identical |
+| `@cf/zai-org/glm-4.7-flash` | both, identical |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `reasoning`, always explicit `null` |
+| `@cf/qwen/qwq-32b` | neither — reasoning is inline in `content` |
 
 ## Tools
 
@@ -163,7 +299,11 @@ When `#[Strict]` is applied, `strict: true` is forwarded to Workers AI's `/compa
 
 ## Reasoning models
 
-Some Workers AI models (Kimi K2.5/K2.6, QwQ, Gemma) emit a chain of thought before their answer. Following the laravel/ai convention — the same one used to pass Anthropic `thinking` or Gemini `thinkingConfig` — reasoning is controlled through `HasProviderOptions`, not a dedicated attribute. The returned options are merged into the request body verbatim. Kimi uses `chat_template_kwargs.thinking`:
+Many Workers AI models emit a chain of thought before their answer. **The general mechanism is [`reasoning_effort`](#reasoning-effort)** — reach for that first.
+
+`chat_template_kwargs.thinking` is the older, narrower lever, and it is **model-specific, not a general switch**. Through v0.6.1 this README presented it as the way to control reasoning on Workers AI. It is not: verified on `@cf/zai-org/glm-5.3-flash`, `chat_template_kwargs: {thinking: false}` left reasoning at 1,172 characters against 1,240 unset — no effect at all. It works on the Kimi chat template and models that share it. Use it only when you know the model reads it.
+
+It is passed through `HasProviderOptions`, the laravel/ai convention also used for Anthropic `thinking` and Gemini `thinkingConfig`. The returned options are merged into the request body verbatim:
 
 ```php
 use Laravel\Ai\Contracts\HasProviderOptions;
@@ -181,16 +321,33 @@ class AnalysisAgent implements Agent, HasProviderOptions
 }
 ```
 
-**Disabling reasoning** (`thinking => false`) is the right default for structured-output and extraction work: reasoning is incompatible with `response_format` (the model spends its token budget thinking instead of conforming to the schema) and roughly triples latency. Verified live on Kimi K2.6 — structured calls return valid JSON in ~4s with thinking off versus busting both the schema and the 60s timeout with it on.
+**On models that read it**, disabling reasoning is the right default for structured-output and extraction work: reasoning competes with `response_format` for the token budget and roughly triples latency. Verified on Kimi K2.6 — structured calls return valid JSON in ~4s with thinking off versus busting both the schema and the 60s timeout with it on. On models that ignore the flag, `#[ReasoningEffort('low')]` is the lever that actually works.
 
 **Enabling reasoning** (`thinking => true`) suits free-form, latency-tolerant judgment tasks. The package then:
 
 - captures the model's reasoning (under either the `reasoning_content` or the K2.6 `reasoning` field) and replays it across tool-call turns so multi-step tool loops stay coherent;
 - raises `max_completion_tokens` to a **2048 floor** when it would otherwise be lower, so the model isn't starved of answer tokens after reasoning (a small budget returns `content: null` / `finish_reason: "length"`). Pair it with a raised `#[Timeout]` (see above).
 
+## Operational limits
+
+Measured against one Workers AI account through AI Gateway. Numbers are indicative, not contractual.
+
+**Gateway-level retry multiplies against your client timeout.** An AI Gateway configured with `retry_max_attempts: 3` retries *inside* your single HTTP request. A call that errors late — an HTTP 408 after 200 seconds — becomes 600-plus seconds from the client's view, and is then cut by your own timeout, so you see a cURL 28 and never learn what the gateway saw. Gateway retry also cannot retry a 200-with-null-content, which is the failure you actually hit. Do not stack a third retry layer on top of the gateway's and this package's; pick one.
+
+**HTTP 408 from the gateway on very long generations.** Distinct from a client timeout, which surfaces as cURL error 28. Reproduced 2026-09-09: `@cf/zai-org/glm-5.3-flash` with `max_tokens: 24000` and a 15-minute client timeout returned `408 Request timeout` after **709 seconds**. The package does not retry a 408 — retrying costs another 709 seconds to reach the same failure. Lower the token cap or split the work.
+
+**Concurrency.** A 40-wide fan-out of small requests to one account returned 40× HTTP 200 with no rate limiting. Rate limits do exist and are account- and model-dependent; if you see 429s, narrow the fan-out rather than assuming a fixed ceiling. The package offers no concurrency helper, so this is your call to make.
+
+**Model notes.**
+
+- `@cf/openai/gpt-oss-120b` — the only model measured whose reasoning stays proportionate to the prompt. Honours `reasoning_effort` properly. The safe default for agent work.
+- `@cf/zai-org/glm-5.3-flash` — capable on short inputs, but does not obey `reasoning_effort` as a gradient and ignores `chat_template_kwargs.thinking`. With no token cap it ran 8,190 tokens over 369 seconds. Always cap it.
+- `@cf/zai-org/glm-4.7-flash` — ignores `reasoning_effort` entirely and spent ~29 seconds on a two-sentence question in every configuration tested. It does return `content` normally, contrary to some earlier reports.
+- `@cf/zai-org/glm-5.3` — not enabled on every account; returns `403 This account is not allowed to access` where it is not.
+
 ## AI Gateway
 
-Set the `gateway` config key to route through Cloudflare AI Gateway. You get free caching, retries, cost analytics, and request logs in the Cloudflare dashboard.
+Set the `gateway` config key to route through Cloudflare AI Gateway. You get free caching, retries, cost analytics, and request logs in the Cloudflare dashboard. As of 0.7.0 this resolves to the gateway's `/compat` path — see [Endpoint resolution](#compat-versus-the-provider-path).
 
 ```php
 'workers-ai' => [
@@ -212,9 +369,44 @@ Workers AI hosts dozens of open-weight models. See the [Cloudflare Workers AI mo
 - `@cf/qwen/...`, `@cf/mistralai/...`, `@cf/microsoft/...`, etc.
 - `@cf/baai/...` — embedding models
 
+Model IDs are strings you supply; nothing validates that one exists or is current. Cloudflare answers `410 Model has been deprecated` for a retired model and `403 This account is not allowed to access` for one your plan does not cover. Both were hit during 0.7.0 testing — `@cf/meta/llama-3.1-8b-instruct` is retired (it was this package's `#[UseCheapestModel]` default through 0.6.1) and `@cf/zai-org/glm-5.3` is not enabled on every account.
+
 ## Provider keys
 
 The provider can be referenced as `workers-ai` (primary) or `workersai` (alias).
+
+## Upgrading to 0.7.0
+
+Verified against four consuming applications before release. Three upgraded with no test changes at all; the fourth surfaced a laravel/ai issue unrelated to this package.
+
+**From 0.6.x** — a drop-in bump. Check three things:
+
+1. **If you use `account_id` + `gateway`,** your requests move from `.../<gw>/workers-ai/v1` to `.../<gw>/compat`. Model IDs are prefixed for you, so no code changes. Your AI Gateway dashboard will show the traffic under the `compat` route instead of `workers-ai`. Set `gateway_path => 'workers-ai/v1'` to keep the old shape.
+2. **`throw_on_empty_response` is now on.** If you were tolerating empty responses deliberately, set it to `false`.
+3. **If you rely on `#[UseCheapestModel]`,** the default model changed because the old one was retired.
+
+**From 0.5.x or earlier** — you must bump `laravel/ai` in the same operation. This package needs `^0.9`, so requiring it alone fails with a clear resolution error:
+
+```
+meirdick/laravel-cf-workersai v0.7.0 requires laravel/ai ^0.9 || ^0.10 || ^0.11
+  -> found laravel/ai[v0.9.0, ..., v0.11.2] but it conflicts with your root
+     composer.json require (^0.7).
+```
+
+Bump both together:
+
+```bash
+composer require "laravel/ai:^0.11" "meirdick/laravel-cf-workersai:^0.7" -W
+```
+
+Two things to expect on that path, neither caused by this package:
+
+- **laravel/ai's own schema moved between 0.9 and 0.11.** Its conversation table gained `participant_type` / `participant_id`. If you published its migrations, republish or reconcile them, or you get `table agent_conversations has no column named participant_type` at runtime. Confirmed to be a laravel/ai concern: the identical failures occur with this package pinned back to 0.6.1.
+- **If your app declares `"php": "^8.2"`,** composer will still resolve — it checks the PHP you are running, not your declared floor. But this package requires `^8.3`, so your `composer.json` then understates your real minimum and `composer install` fails on an 8.2 deployment target. Bump your own `php` constraint to `^8.3`.
+
+## Handoff
+
+[`HANDOFF.md`](HANDOFF.md) is the end-to-end brief for someone picking this up cold: what the package is for, when not to use it, every trap with its measured number, how the tests are organized, and what is deliberately unhandled.
 
 ## Versioning
 

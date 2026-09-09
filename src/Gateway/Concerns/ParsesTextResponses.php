@@ -13,6 +13,7 @@ use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\Data\Usage;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
 use Meirdick\WorkersAi\Providers\WorkersAiProvider;
@@ -72,11 +73,9 @@ trait ParsesTextResponses
         // is "stop" rather than omitting the key.
         $rawToolCalls = ToolCallList::fromResponse($data);
         $usage = $this->extractUsage($data);
-        $finishReason = $this->extractFinishReason(
-            $choice,
-            $usage->completionTokens,
-            $this->resolveMaxTokens($provider, $options),
-        );
+        $finishReason = $this->extractFinishReason($choice);
+
+        $this->reportNeurons($data, $provider, $model, $usage);
 
         $mappedToolCalls = array_map(fn (array $toolCall) => new ToolCall(
             $toolCall['id'] ?? '',
@@ -202,6 +201,33 @@ trait ParsesTextResponses
     }
 
     /**
+     * Dispatch the Cloudflare-metered `neurons` figure for the call.
+     *
+     * `Laravel\Ai\Responses\Data\Usage` is five fixed integer token counters
+     * with no extensible field, and `Meta` has no arbitrary bag either, so a
+     * per-call neuron count has nowhere to live on the SDK's response objects.
+     * An event is the only place to put it that survives to the consumer.
+     * Silent no-op when the response omits the field.
+     */
+    protected function reportNeurons(array $data, Provider $provider, string $model, Usage $usage): void
+    {
+        $neurons = UsageTokens::neurons($data['usage'] ?? []);
+
+        if (is_null($neurons) || ! isset($this->events)) {
+            return;
+        }
+
+        $this->events->dispatch(new WorkersAiUsageReported(
+            provider: $provider->name(),
+            model: $model,
+            neurons: $neurons,
+            promptTokens: $usage->promptTokens,
+            completionTokens: $usage->completionTokens,
+            reasoningTokens: $usage->reasoningTokens,
+        ));
+    }
+
+    /**
      * Extract usage data from the response.
      *
      * UsageTokens centralizes the explicit-null tolerance and the
@@ -224,12 +250,23 @@ trait ParsesTextResponses
     /**
      * Extract and map the finish reason from the response.
      *
-     * Cloudflare's `/v1/chat/completions` misreports truncated completions as
-     * `finish_reason: "stop"` instead of `"length"`. When we know the requested
-     * max-token budget and the completion exhausted it, normalize to `Length`
-     * so laravel/ai's length-aware retry/continuation primitives can fire.
-     * Without this, agents quietly receive truncated JSON and the SDK has no
-     * signal that anything was wrong.
+     * Through v0.6.1 this method also coerced `stop` to `Length` whenever the
+     * completion had exhausted the requested budget, on the belief that
+     * Cloudflare misreported truncation as `stop`. Re-measured live on
+     * 2026-09-09 against AI Gateway `/compat`, that is not what happens:
+     * `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/openai/gpt-oss-120b`
+     * and `@cf/zai-org/glm-5.3-flash` each returned `finish_reason: "length"`
+     * on a 16-token cap, and so did every model truncated at Cloudflare's
+     * 256-token default. The coercion was therefore redundant, and it could
+     * misfire on a model that legitimately finished on its last budgeted
+     * token — which now matters, because `throw_on_truncation` turns a
+     * `Length` finish into an exception. The raw reason is trusted.
+     *
+     * The two trailing parameters are retained for backwards compatibility
+     * with subclasses that override this hook. They are unused.
+     *
+     * @param  int|null  $completionTokens  deprecated, ignored
+     * @param  int|null  $requestedMaxTokens  deprecated, ignored
      */
     protected function extractFinishReason(
         array $choice,
@@ -237,13 +274,6 @@ trait ParsesTextResponses
         ?int $requestedMaxTokens = null,
     ): FinishReason {
         $raw = $choice['finish_reason'] ?? '';
-
-        if ($raw === 'stop'
-            && ! is_null($requestedMaxTokens)
-            && ! is_null($completionTokens)
-            && $completionTokens >= $requestedMaxTokens) {
-            return FinishReason::Length;
-        }
 
         return match ($raw) {
             'stop' => FinishReason::Stop,

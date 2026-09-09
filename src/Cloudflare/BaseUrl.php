@@ -20,12 +20,35 @@ use InvalidArgumentException;
  *   - ['account_id' => '...', 'gateway' => '...']         — Cloudflare AI Gateway
  *   - ['account_id' => '...']                             — direct Workers AI API
  *
+ * The AI Gateway shape resolves to the gateway's `/compat` path, NOT the
+ * provider-specific `/workers-ai/v1` path, because `/compat` is the shape that
+ * worked on every gateway tested. Measured 2026-09-09 across two gateways on
+ * one account: on a gateway with Authenticated Gateway enabled
+ * (`authentication: true`), `/workers-ai/v1/embeddings` answered HTTP 401
+ * "Authentication error" while chat completions on that same gateway and both
+ * operations on `/compat` succeeded, with two different tokens. On a gateway
+ * with the setting off, the provider path served embeddings fine. The failure
+ * therefore tracks gateway configuration, not the token and not the path
+ * alone — but `/compat` was uniformly reliable, so it is the default. Set
+ * `gateway_path => 'workers-ai/v1'` to opt back in.
+ *
  * Specifying both `url` and `account_id` is rejected — silently picking one
  * over the other has caused real production confusion when users override a
  * URL during debugging and forget to remove the account_id.
  */
 final class BaseUrl
 {
+    /**
+     * The AI Gateway sub-path used when `gateway_path` is not configured.
+     *
+     * `/compat` is Cloudflare's multi-provider OpenAI-compatible surface, and
+     * the only gateway path observed to serve both chat and embeddings across
+     * every gateway configuration tested. That is why it is the default
+     * despite requiring `workers-ai/`-prefixed model IDs — ModelPrefix adds
+     * the prefix automatically.
+     */
+    public const DEFAULT_GATEWAY_PATH = 'compat';
+
     /**
      * @param  array<string, mixed>  $config  the provider's `additionalConfiguration()` (Laravel AI) or the prism.providers.<key> array
      */
@@ -61,16 +84,18 @@ final class BaseUrl
         if ($gateway !== null) {
             self::validateGatewaySlug($gateway);
 
-            return "https://gateway.ai.cloudflare.com/v1/{$accountId}/{$gateway}/workers-ai/v1";
+            $path = self::nonEmpty($config['gateway_path'] ?? null) ?? self::DEFAULT_GATEWAY_PATH;
+
+            return "https://gateway.ai.cloudflare.com/v1/{$accountId}/{$gateway}/".trim($path, '/');
         }
 
         return "https://api.cloudflare.com/client/v4/accounts/{$accountId}/ai/v1";
     }
 
     /**
-     * Whether the URL targets the legacy `/compat` endpoint, which alone
-     * requires `workers-ai/`-prefixed model IDs. Used by the model-name
-     * validator to give the right fix in error messages.
+     * Whether the URL targets the `/compat` endpoint. `/compat` is the
+     * multi-provider surface, so it routes on a `workers-ai/` model prefix;
+     * ModelPrefix uses this to decide whether to add or reject one.
      */
     public static function isCompatEndpoint(string $url): bool
     {

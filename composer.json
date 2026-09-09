@@ -1,9 +1,9 @@
 {
     "name": "meirdick/laravel-cf-workersai",
-    "description": "Cloudflare Workers AI provider for Laravel AI SDK with AI Gateway support.",
+    "description": "Cloudflare Workers AI provider for the Laravel AI SDK, with AI Gateway routing, reasoning-effort control and non-answer detection.",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway"],
+    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway", "llm", "embeddings", "reasoning"],
     "authors": [
         {
             "name": "Meir Dick",

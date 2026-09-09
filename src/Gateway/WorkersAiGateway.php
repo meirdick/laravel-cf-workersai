@@ -57,7 +57,7 @@ class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
         int $timeout = 30,
         array $providerOptions = [],
     ): EmbeddingsResponse {
-        $this->validateModelName($provider, $model);
+        $model = $this->resolveModelName($provider, $model);
 
         $body = array_merge(
             $this->sanitizeEmbeddingProviderOptions($providerOptions),

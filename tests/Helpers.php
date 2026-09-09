@@ -31,6 +31,31 @@ function workersAiTextResponse(string $content = 'Hello from Workers AI'): array
     ];
 }
 
+/**
+ * A completion Workers AI cut off at the token budget. Verified live: the
+ * endpoint sets `finish_reason: "length"` in this situation rather than
+ * "stop" — this fixture mirrors the real wire shape.
+ *
+ * @return array<string, mixed>
+ */
+function workersAiTruncatedResponse(?string $content = 'partial', int $completionTokens = 4096): array
+{
+    return [
+        'id' => 'chatcmpl-truncated',
+        'object' => 'chat.completion',
+        'model' => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        'choices' => [[
+            'index' => 0,
+            'message' => ['role' => 'assistant', 'content' => $content],
+            'finish_reason' => 'length',
+        ]],
+        'usage' => [
+            'prompt_tokens' => 10,
+            'completion_tokens' => $completionTokens,
+        ],
+    ];
+}
+
 function fakeWorkersAiResponse(string $text = 'Hello'): PromiseInterface
 {
     return Http::response(workersAiTextResponse($text));
@@ -63,6 +88,16 @@ function fakeWorkersAiToolCallResponse(): array
             'completion_tokens' => 10,
         ],
     ];
+}
+
+/**
+ * The decoded JSON body of the most recent faked HTTP request.
+ *
+ * @return array<string, mixed>
+ */
+function lastRequestBody(): array
+{
+    return json_decode(Http::recorded()->last()[0]->body(), true);
 }
 
 /*

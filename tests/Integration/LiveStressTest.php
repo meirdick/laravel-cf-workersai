@@ -24,7 +24,7 @@ use Tests\Fixtures\Agents\NonStrictAgent;
 use Tests\Fixtures\Agents\RequiredToolAgent;
 use Tests\Fixtures\Agents\TinyBudgetAgent;
 
-const STRESS_FAST_MODEL = '@cf/meta/llama-3.1-8b-instruct';
+const STRESS_FAST_MODEL = '@cf/meta/llama-3.2-3b-instruct';
 const STRESS_BIG_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 const STRESS_REASONING_MODEL = '@cf/moonshotai/kimi-k2.6';
 // llama-3.3-70b does not emit tool calls on the /v1 endpoint (verified live

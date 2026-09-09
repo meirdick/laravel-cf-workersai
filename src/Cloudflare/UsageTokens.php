@@ -77,4 +77,20 @@ final class UsageTokens
 
         return $reasoning === null ? null : (int) $reasoning;
     }
+
+    /**
+     * Cloudflare's own billing unit for the call, returned by `/compat` under
+     * `usage.neurons`. Fractional — a 16-token llama-3.3-70b completion
+     * measured 4.4769 neurons. Reported on all three endpoint shapes
+     * (`/compat`, the AI Gateway provider path, and the direct API);
+     * null when a response omits it.
+     *
+     * @param  array<string, mixed>|null  $usage
+     */
+    public static function neurons(?array $usage): ?float
+    {
+        $neurons = data_get($usage, 'neurons');
+
+        return is_numeric($neurons) ? (float) $neurons : null;
+    }
 }
