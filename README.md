@@ -188,6 +188,15 @@ Event::listen(WorkersAiUsageReported::class, function (WorkersAiUsageReported $e
 
 One event per model call, including each step of a tool loop. Anything costing Workers AI from token counts alone is costing the wrong number.
 
+If you would rather read it inline than listen for an event, the raw HTTP response is on the response and on every step:
+
+```php
+$response = agent('helper')->prompt('...', provider: 'workers-ai');
+
+$neurons = $response->raw?->json('usage.neurons');
+$latency = $response->raw?->transferStats?->getTransferTime();
+```
+
 ## Quickstart
 
 ```php

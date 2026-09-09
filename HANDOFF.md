@@ -268,7 +268,7 @@ vendor/bin/pest tests/Gateway/ReasoningEffortTest.php
 vendor/bin/pest --filter='truncated'
 ```
 
-161 tests pass; 43 skip without live credentials. There is no static analysis and no formatter configured — do not add one as a drive-by.
+164 tests pass; 43 skip without live credentials. There is no static analysis and no formatter configured — do not add one as a drive-by.
 
 `tests/Gateway/` covers the unit surface against `Http::fake()`:
 
@@ -283,6 +283,7 @@ vendor/bin/pest --filter='truncated'
 | `StructuredOutputTest`, `StructuredOutputReaskTest` | JSON mode and the bounded re-ask |
 | `StreamingTest`, `StreamUsageAccumulationTest` | SSE parsing, the trailing all-zero usage chunk |
 | `ReasoningCaptureTest`, `ThinkingTokenFloorTest` | Reasoning field normalization, the 2,048 floor |
+| `RawResponseTest` | `$response->raw` passthrough, per-step raw in a tool loop |
 | `ResilienceTest` | 408 -> GatewayTimeoutException and attempted once, 429 retry + Retry-After, `retry_attempts` / `retry_rate_limited`, Cloudflare 520/522/524 |
 | `ErrorHandlingTest`, `RetryPolicyTest` | Cloudflare error envelopes, retry decisions, backoff and `Retry-After` parsing |
 | `ToolCallLoopTest`, `SubAgentTest` | Tool loop and `CanActAsTool` |

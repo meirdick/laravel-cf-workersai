@@ -4,6 +4,14 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.1] - 2026-09-09
+
+### Fixed
+
+- **The HTTP response was not carried onto the step, so `$response->raw` was always null.** laravel/ai's own OpenAI and OpenAI-compatible gateways both call `withRawResponse()`; this one never did. `StepResponse::$raw` is the only route to anything the SDK's typed response objects have no field for — including Cloudflare's `usage.neurons` and the transfer stats used for per-call latency. A consuming application reading `$response->raw?->json('usage.neurons')` got null and recorded a cost of zero, which is a worse failure than an error because nothing looks wrong. Found while migrating a real pipeline onto the package, which had been reading exactly that off the built-in driver. Each step of a tool loop now carries its own response.
+
+  `StepResponse` only gained `HasRawResponse` after laravel/ai 0.9, so the call is guarded by `method_exists()` rather than assumed — on `^0.9` the raw response stays unavailable, as it was before 0.8.1, instead of every call fataling on an undefined method. Verified against v0.9.1, v0.10.3 and v0.11.2.
+
 ## [0.8.0] - 2026-09-09
 
 Closes the two gaps a consuming project hit in production and this package previously only documented: HTTP 408 on long generations and HTTP 429 under fan-out. Adds a third that the same investigation uncovered.

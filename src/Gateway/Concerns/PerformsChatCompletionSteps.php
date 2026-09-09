@@ -170,7 +170,23 @@ trait PerformsChatCompletionSteps
 
         $this->validateTextResponse($data);
 
-        return $this->parseTextResponse($data, $provider, $structured, $options);
+        $step = $this->parseTextResponse($data, $provider, $structured, $options);
+
+        // Carry the HTTP response onto the step, the way laravel/ai's own
+        // OpenAI and OpenAI-compatible gateways do. It is the only route to
+        // anything the SDK's typed response objects have no field for —
+        // Cloudflare's `usage.neurons`, and the transfer stats a consumer
+        // uses for per-call latency. Without it a consuming app that reads
+        // `$response->raw` silently gets null and its cost tracking quietly
+        // reports zero.
+        //
+        // StepResponse only gained HasRawResponse after 0.9, and this package
+        // still supports ^0.9, so the call is guarded rather than assumed. On
+        // 0.9 the raw response is simply unavailable — the same as before
+        // 0.8.1 — instead of every call fataling on an undefined method.
+        return method_exists($step, 'withRawResponse')
+            ? $step->withRawResponse($response)
+            : $step;
     }
 
     /**
