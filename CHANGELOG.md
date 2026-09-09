@@ -4,6 +4,13 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.2] - 2026-09-09
+
+### Added
+
+- **A complete status-code matrix test.** Every HTTP status the gateway realistically returns is now asserted for both the exception it becomes and whether it was retried: 400, 401, 402, 403, 404, 408, 410, 413, 429, 500, 502, 503, 504, 520, 522, 524. Previously the six transient codes were covered only as a retry *decision* in `RetryPolicyTest`, while the end-to-end mapping was asserted for just 408, 429, 503 and the three Cloudflare edge codes — 402 was a comment rather than a test, and 502 and 504 were never exercised through the gateway at all. Two lists have to agree for failover to work (`RetryPolicy::RETRYABLE_STATUSES` and `WorkersAiGateway::overloadedStatusCodes()`), they drifted apart once already in 0.7.0, and a passing suite did not notice.
+- Companion assertions that every transient failure carries laravel/ai's `FailoverableException` marker — a mapping with the right class but no marker fails over silently, which is to say not at all — and that a transient status which clears on the next attempt never reaches the caller.
+
 ## [0.8.1] - 2026-09-09
 
 ### Fixed
