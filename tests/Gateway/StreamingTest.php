@@ -1,5 +1,7 @@
 <?php
 
+use Composer\InstalledVersions;
+use Composer\Semver\VersionParser;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Exceptions\StreamErrorException;
 use Laravel\Ai\Streaming\Events\Error;
@@ -222,18 +224,33 @@ test('streaming error event stops stream', function () {
         ),
     ]);
 
-    // Since laravel/ai 0.11 a stream that ends on an error event throws
-    // StreamErrorException (laravel/ai#870) instead of ending the run silently.
-    // The gateway's Error event travels on the exception.
-    try {
-        $this->collectStreamEvents();
+    // The SDK's handling of a stream that ends on an error event changed in
+    // laravel/ai 0.11 (laravel/ai#870): it now throws StreamErrorException
+    // carrying the gateway's Error event, where 0.9 and 0.10 ended the run
+    // silently and left the Error event in the stream. The package emits the
+    // same Error event either way — only the SDK's reaction differs — so the
+    // assertion is version-gated rather than pinned to the newer behaviour.
+    if (InstalledVersions::satisfies(new VersionParser, 'laravel/ai', '>=0.11')) {
+        try {
+            $this->collectStreamEvents();
 
-        $this->fail('Expected StreamErrorException to be thrown.');
-    } catch (StreamErrorException $exception) {
-        expect($exception->getMessage())->toBe('Rate limit exceeded')
-            ->and($exception->error)->toBeInstanceOf(Error::class)
-            ->and($exception->error->type)->toBe('rate_limit_exceeded');
+            $this->fail('Expected StreamErrorException to be thrown.');
+        } catch (StreamErrorException $exception) {
+            expect($exception->getMessage())->toBe('Rate limit exceeded')
+                ->and($exception->error)->toBeInstanceOf(Error::class)
+                ->and($exception->error->type)->toBe('rate_limit_exceeded');
+        }
+
+        return;
     }
+
+    $events = $this->collectStreamEvents();
+
+    $errors = array_values(array_filter($events, fn ($e) => $e instanceof Error));
+
+    expect($errors)->not->toBeEmpty()
+        ->and($errors[0]->type)->toBe('rate_limit_exceeded')
+        ->and($errors[0]->message)->toBe('Rate limit exceeded');
 });
 
 test('streaming captures usage from final chunk', function () {
