@@ -16,10 +16,20 @@ trait CreatesWorkersAiClient
     /**
      * Get an HTTP client for the Workers AI API.
      *
-     * Retries transient gateway failures (cURL 6/7/28/56, HTTP 502/503/504) per
-     * Cloudflare\RetryPolicy — the same policy the Prism path uses, so both
-     * integrations share a single retry surface. Set `retry => false` in the
-     * provider config to disable.
+     * Retries transient gateway failures per Cloudflare\RetryPolicy: connect-
+     * phase cURL errors (6/7/28/56), the transient HTTP statuses 502/503/504,
+     * Cloudflare's own edge errors 520/522/524, and — since 0.8.0 — HTTP 429
+     * with `Retry-After`-aware exponential backoff.
+     *
+     * Config knobs, all on the provider block:
+     *   - `retry => false`            disable retrying entirely
+     *   - `retry_attempts => 3`       total attempts, including the first
+     *   - `retry_rate_limited => false` let a 429 fail over immediately
+     *
+     * A note on stacking: Cloudflare AI Gateway has its own retry setting,
+     * and it retries *inside* your single HTTP request. If your gateway is
+     * configured with `retry_max_attempts`, its retries multiply against
+     * these, and against your client timeout. Pick one layer.
      */
     protected function client(Provider $provider, ?int $timeout = null): PendingRequest
     {
@@ -31,7 +41,10 @@ trait CreatesWorkersAiClient
             ->throw();
 
         if (($additionalConfig['retry'] ?? true) !== false) {
-            $client = $client->retry(...RetryPolicy::defaults());
+            $client = $client->retry(...RetryPolicy::defaults(
+                retryRateLimited: ($additionalConfig['retry_rate_limited'] ?? true) !== false,
+                attempts: (int) ($additionalConfig['retry_attempts'] ?? RetryPolicy::DEFAULT_ATTEMPTS),
+            ));
         }
 
         if (! empty($additionalConfig['session_affinity'])) {

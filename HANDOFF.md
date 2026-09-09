@@ -17,7 +17,7 @@ laravel/ai ships an `openai-compatible` driver. Point it at a Cloudflare AI Gate
 **A real consuming project evaluated switching to this package and decided against it.** Their reasoning was sound and you should understand it before you assume the package is the answer:
 
 - The failure they cared about most — truncation — is already detectable through the built-in driver, because Workers AI reports `finish_reason: "length"` correctly (see §5). They wrote a dozen lines to check it themselves and got what they needed.
-- The failures they actually hit in production were HTTP 408s on long generations and HTTP 429s under fan-out. **This package does not solve either.** It documents them and declines to retry a 408. That is all.
+- The failures they actually hit in production were HTTP 408s on long generations and HTTP 429s under fan-out. As of 0.8.0 the package **does** handle both (§11) — that gap is closed, and it was closed because of their report.
 
 So the honest case for the package is the accumulation of smaller things, not one headline feature:
 
@@ -215,13 +215,33 @@ One correction: earlier notes said `@cf/zai-org/glm-4.7-flash` returns `content:
 - **Timeouts.** laravel/ai defaults to 60 seconds. That is not enough for several Workers AI models. A transfer timeout (cURL 28) is not retried — before 0.3.0 it was, turning a 60s timeout into ~3 minutes.
 - **502/503/504** are retried with backoff and then mapped to `ProviderOverloadedException` so laravel/ai failover reacts.
 
-## 11. Operational limits the package does not solve
+## 11. Failure modes, and what the package does about them
 
-**Gateway retry multiplies against your client timeout.** An AI Gateway with `retry_max_attempts: 3` retries *inside* your single HTTP request. A call that errors late becomes three times as long from the client's view and is then cut by your own timeout — you see cURL 28 and never learn what the gateway saw. Gateway retry also cannot retry a 200-with-null-content, which is the failure you actually hit. Do not stack a third retry layer on the gateway's and this package's.
+| Wire result | Retried? | Surfaces as | Failoverable |
+|---|---|---|---|
+| cURL 6/7/56, connect-phase 28 | yes, backoff | `ProviderConnectionException` | yes |
+| cURL 28 mid-transfer | **no** | `ProviderConnectionException` | yes |
+| 402 | no | `InsufficientCreditsException` | yes |
+| **408** | **no** | **`GatewayTimeoutException`** | yes |
+| **429** | **yes, `Retry-After`-aware** | `RateLimitedException` | yes |
+| 502 / 503 / 504 | yes, backoff | `ProviderOverloadedException` | yes |
+| **520 / 522 / 524** | **yes, backoff** | `ProviderOverloadedException` | yes |
+| 200 + empty content | n/a | `EmptyResponseException` | no |
+| 200 + `finish_reason: length` | n/a | `TruncatedResponseException` (opt-in) | no |
 
-**HTTP 408 on long generations.** Reproduced 2026-09-09: `@cf/zai-org/glm-5.3-flash`, `max_tokens: 24000`, 15-minute client timeout → `408 Request timeout` after **709 seconds**. Distinct from a client timeout, which is cURL 28. The package deliberately does not retry a 408; retrying costs another 709 seconds to reach the same failure. Lower the cap or split the work.
+The bolded rows are 0.8.0. All three came from one consuming project's production experience rather than from reading Cloudflare's docs.
 
-**HTTP 429 under fan-out.** Not reproduced. 28 concurrent small requests and then 40 concurrent all returned 200 with no rate limiting, on this account, on this date. The consuming project measured roughly ten of twenty-eight lost to 429 in the same second. Rate limits are account- and model-dependent, so treat any specific width as folklore: if you see 429s, narrow the fan-out. The package ships no concurrency helper.
+**408 is never retried, and that is deliberate.** Reproduced 2026-09-09: `@cf/zai-org/glm-5.3-flash`, `max_tokens: 24000` -> `408 Request timeout` after **709 seconds**. The generation that took 709 seconds will take 709 seconds on the retry. Three attempts is thirty-five minutes to learn nothing. It is failoverable instead, so a fallback provider can answer. With no fallback configured, lower the cap or split the work.
+
+**429 is retried because laravel/ai does not retry it.** The SDK maps it to a failoverable `RateLimitedException` and stops there. Under a fan-out that means one 429 is one lost request — which is what the consuming project measured, roughly ten of twenty-eight in the same second. The package now backs off (500ms, 1s, 2s..., capped at 20s) and honours `Retry-After` in both legal forms, clamping a past date to zero and an absurd delay to the cap. `retry_rate_limited => false` restores fail-fast.
+
+**520/522/524 were missing.** Through 0.7.0 `overloadedStatusCodes()` returned `[502, 503, 504]` — *narrower* than laravel/ai's own `[502, 503, 504, 520, 522, 524]`. A Cloudflare package silently dropping Cloudflare's three edge error codes. Every request here crosses the edge twice, once to the gateway and once to the model runner, so they are more likely here, not less. The list now comes from `RetryPolicy::RETRYABLE_STATUSES` so the retry set and the failover set cannot drift apart again.
+
+### Still not solved
+
+**Gateway retry multiplies against your client timeout.** An AI Gateway with `retry_max_attempts: 3` retries *inside* your single HTTP request, so its retries multiply against this package's and against your timeout. It also cannot retry a 200-with-null-content, which is the failure you actually hit. Pick one layer; if you pick the gateway, set `retry => false` here.
+
+**No concurrency limiter.** The package retries your 429s; it will not stop you creating them. Throttling the fan-out belongs in the consuming application, which is the only thing that knows which half of the work is urgent.
 
 ## 12. Upgrade evidence
 
@@ -248,7 +268,7 @@ vendor/bin/pest tests/Gateway/ReasoningEffortTest.php
 vendor/bin/pest --filter='truncated'
 ```
 
-133 tests pass; 43 skip without live credentials. There is no static analysis and no formatter configured — do not add one as a drive-by.
+161 tests pass; 43 skip without live credentials. There is no static analysis and no formatter configured — do not add one as a drive-by.
 
 `tests/Gateway/` covers the unit surface against `Http::fake()`:
 
@@ -263,7 +283,8 @@ vendor/bin/pest --filter='truncated'
 | `StructuredOutputTest`, `StructuredOutputReaskTest` | JSON mode and the bounded re-ask |
 | `StreamingTest`, `StreamUsageAccumulationTest` | SSE parsing, the trailing all-zero usage chunk |
 | `ReasoningCaptureTest`, `ThinkingTokenFloorTest` | Reasoning field normalization, the 2,048 floor |
-| `ErrorHandlingTest`, `RetryPolicyTest` | Cloudflare error envelopes, what is and is not retried (including 408) |
+| `ResilienceTest` | 408 -> GatewayTimeoutException and attempted once, 429 retry + Retry-After, `retry_attempts` / `retry_rate_limited`, Cloudflare 520/522/524 |
+| `ErrorHandlingTest`, `RetryPolicyTest` | Cloudflare error envelopes, retry decisions, backoff and `Retry-After` parsing |
 | `ToolCallLoopTest`, `SubAgentTest` | Tool loop and `CanActAsTool` |
 | `CredentialsTest` | `key` / `api_key` resolution |
 
@@ -273,7 +294,7 @@ CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11`.
 
 ## 14. Deliberately not handled
 
-- **HTTP 408 and HTTP 429.** Documented, not solved. No adaptive backoff, no concurrency limiter, no request splitting. If your workload needs those, build them in the consuming application where you know the shape of the work.
+- **Concurrency limiting and request splitting.** 408 and 429 are handled (§11), but nothing throttles a fan-out or splits an over-large generation. Those belong in the consuming application, which knows the shape and urgency of the work.
 - **Streaming does not enforce the empty/truncation guards.** They run on `generateTextStep()` only. A stream surfaces the finish reason on `StreamEnd` and the caller decides.
 - **No neuron budgeting.** The figure is reported; nothing enforces a ceiling.
 - **`#[CacheInstructions]` is inert here.** Verified in laravel/ai v0.11.2: it is resolved onto `TextGenerationOptions` for every provider, but consumed only by the Anthropic gateway (`applyPromptCacheBreakpoints`) and the Bedrock gateway (`cachePoint`). No OpenAI-compatible provider, this one included, does anything with it. Workers AI's prefix cache is driven by `session_affinity` instead, and its hits show up in `usage.prompt_tokens_details.cached_tokens`, which the package maps to `Usage::$cacheReadInputTokens`.

@@ -13,7 +13,8 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 - Empty- and truncated-response detection, so a silent HTTP 200 with no answer becomes a catchable exception.
 - Cloudflare's `neurons` billing figure surfaced as an event.
 - Retry policy and AI Gateway session affinity.
-- Failover-ready: 429/402/502/503/504 map to laravel/ai's failoverable exceptions.
+- Failover-ready: 402/429/502/503/504/520/522/524 and gateway 408s map to laravel/ai's failoverable exceptions.
+- 429 retried with `Retry-After`-aware backoff; 408 never retried, always failoverable.
 
 ## Requirements
 
@@ -35,7 +36,9 @@ Reach for this package when you want:
 - **Neuron accounting.** Token counts are not what Cloudflare bills.
 - **Embeddings, tool loops, streaming and structured output** against Workers AI's quirks, rather than the generic OpenAI shape.
 
-What it does **not** solve: HTTP 408s from the gateway on very long generations, and HTTP 429 under wide fan-out. Those are yours to handle. See [Operational limits](#operational-limits).
+- **408 and 429 handled properly.** A gateway 408 becomes a named, failoverable exception instead of an opaque `RequestException`; a 429 is retried with `Retry-After`-aware backoff instead of being dropped on the floor.
+
+What it still does **not** solve: throttling your own fan-out. There is no concurrency limiter — the package will retry your 429s, but it will not stop you creating them. See [Operational limits](#operational-limits).
 
 ## Installation
 
@@ -332,11 +335,30 @@ class AnalysisAgent implements Agent, HasProviderOptions
 
 Measured against one Workers AI account through AI Gateway. Numbers are indicative, not contractual.
 
-**Gateway-level retry multiplies against your client timeout.** An AI Gateway configured with `retry_max_attempts: 3` retries *inside* your single HTTP request. A call that errors late — an HTTP 408 after 200 seconds — becomes 600-plus seconds from the client's view, and is then cut by your own timeout, so you see a cURL 28 and never learn what the gateway saw. Gateway retry also cannot retry a 200-with-null-content, which is the failure you actually hit. Do not stack a third retry layer on top of the gateway's and this package's; pick one.
+**HTTP 408 — the generation outran the gateway.** Distinct from a client timeout, which surfaces as cURL 28. Reproduced 2026-09-09: `@cf/zai-org/glm-5.3-flash` with `max_tokens: 24000` returned `408 Request timeout` after **709 seconds**.
 
-**HTTP 408 from the gateway on very long generations.** Distinct from a client timeout, which surfaces as cURL error 28. Reproduced 2026-09-09: `@cf/zai-org/glm-5.3-flash` with `max_tokens: 24000` and a 15-minute client timeout returned `408 Request timeout` after **709 seconds**. The package does not retry a 408 — retrying costs another 709 seconds to reach the same failure. Lower the token cap or split the work.
+As of 0.8.0 this throws `Meirdick\WorkersAi\Exceptions\GatewayTimeoutException`, which implements laravel/ai's `FailoverableException` — so a configured fallback provider gets a chance instead of the caller getting an opaque `RequestException`. It is attempted **once**: retrying work that took 709 seconds costs another 709 seconds to reach the same failure. Lower the token cap, reduce `reasoning_effort`, or split the work.
 
-**Concurrency.** A 40-wide fan-out of small requests to one account returned 40× HTTP 200 with no rate limiting. Rate limits do exist and are account- and model-dependent; if you see 429s, narrow the fan-out rather than assuming a fixed ceiling. The package offers no concurrency helper, so this is your call to make.
+**HTTP 429 — rate limited.** laravel/ai maps a 429 to `RateLimitedException` and marks it failoverable, but it never retries it, so under a wide fan-out one 429 is one lost request.
+
+As of 0.8.0 the package retries a 429 with exponential backoff, honouring a `Retry-After` header when the response carries one (both the delay-seconds and HTTP-date forms). Only after the attempts are spent does it surface as `RateLimitedException` for failover.
+
+```php
+'workers-ai' => [
+    // ...
+    'retry'              => true,   // false disables retrying entirely
+    'retry_attempts'     => 3,      // total attempts, including the first
+    'retry_rate_limited' => true,   // false makes a 429 fail over immediately
+],
+```
+
+Backoff is 500ms, 1s, 2s…, capped at 20s, and a `Retry-After` longer than the cap is clamped rather than parking a worker for minutes.
+
+**Cloudflare edge errors.** 520 (unknown error), 522 (connection timed out) and 524 (origin timeout) are retried and then mapped to `ProviderOverloadedException`, alongside 502/503/504. Every request here crosses Cloudflare's edge twice — once to the gateway, once to the model runner — so these are more likely than for a typical OpenAI-compatible provider. Through 0.7.0 the package *narrowed* laravel/ai's own list to just 502/503/504 and left the three edge codes unretried.
+
+**Gateway-level retry multiplies against your client timeout.** An AI Gateway configured with `retry_max_attempts: 3` retries *inside* your single HTTP request. A call that errors late becomes several times as long from the client's view, and is then cut by your own timeout, so you see a cURL 28 and never learn what the gateway saw. Gateway retry also cannot retry a 200-with-null-content, which is the failure you actually hit. Do not stack the gateway's retries on top of this package's — pick one layer, and if you pick the gateway, set `retry => false` here.
+
+**Concurrency.** A 40-wide fan-out of small requests to one account returned 40× HTTP 200 with no rate limiting; a different account and model lost roughly ten of twenty-eight to 429s in the same second. Limits are account- and model-dependent, so treat any specific width as folklore. The package now retries the 429s rather than dropping them, but it ships no concurrency limiter — throttling the fan-out is still your call.
 
 **Model notes.**
 

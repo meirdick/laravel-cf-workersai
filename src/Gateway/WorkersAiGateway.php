@@ -11,8 +11,11 @@ use Laravel\Ai\Gateway\Concerns\HandlesFailoverErrors;
 use Laravel\Ai\Gateway\Concerns\ParsesServerSentEvents;
 use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\EmbeddingsResponse;
+use Illuminate\Http\Client\RequestException;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
+use Meirdick\WorkersAi\Cloudflare\RetryPolicy;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
+use Meirdick\WorkersAi\Exceptions\GatewayTimeoutException;
 
 /**
  * Single-step Workers AI gateway (laravel/ai ^0.9).
@@ -32,7 +35,9 @@ class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
     use Concerns\MapsTools;
     use Concerns\ParsesTextResponses;
     use Concerns\PerformsChatCompletionSteps;
-    use HandlesFailoverErrors;
+    use HandlesFailoverErrors {
+        withErrorHandling as protected handleFailoverErrors;
+    }
     use ParsesServerSentEvents;
 
     public function __construct(protected Dispatcher $events)
@@ -81,19 +86,57 @@ class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
     }
 
     /**
-     * The status codes that indicate the provider is overloaded.
+     * Intercept HTTP 408 before laravel/ai's generic failover mapping.
+     *
+     * A gateway 408 is Cloudflare saying the generation outran its patience,
+     * not that the network failed — it is neither an overload nor a rate
+     * limit, and laravel/ai's mapping would let it through as a raw
+     * RequestException naming nothing useful. GatewayTimeoutException says
+     * what happened and is failoverable, so a configured fallback provider
+     * gets a chance instead of the caller getting an opaque 408.
+     *
+     * @template T
+     *
+     * @param  \Closure(): T  $callback
+     * @return T
+     */
+    protected function withErrorHandling(string $providerName, \Closure $callback): mixed
+    {
+        try {
+            return $this->handleFailoverErrors($providerName, $callback);
+        } catch (RequestException $exception) {
+            if ($exception->response?->status() === 408) {
+                throw GatewayTimeoutException::forProvider(
+                    $providerName, $exception->getCode(), $exception,
+                );
+            }
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * The status codes that indicate the provider is transiently unavailable.
      *
      * Cloudflare fronts Workers AI with its edge network, so transient
-     * capacity problems surface as 502/504 from the gateway layer as often
-     * as 503 from the model runner. RetryPolicy already retries these; once
-     * retries are exhausted, mapping them to ProviderOverloadedException
-     * lets laravel/ai's failover move to the next provider in the list.
+     * capacity problems surface as 502/504 from the gateway layer as often as
+     * 503 from the model runner — and, uniquely for a Cloudflare-hosted
+     * provider, as the edge's own 520 (unknown error), 522 (connection timed
+     * out) and 524 (origin timeout). Every request here crosses the edge
+     * twice, once to the gateway and once to the model runner, so those three
+     * are more likely than for a typical OpenAI-compatible provider, not less.
+     * Through 0.7.0 this method returned only [502, 503, 504], which
+     * *narrowed* laravel/ai's own default and left the Cloudflare-specific
+     * codes unretried and unfailoverable.
+     *
+     * RetryPolicy retries these; once retries are exhausted, mapping them to
+     * ProviderOverloadedException lets laravel/ai's failover move on.
      *
      * @return list<int>
      */
     protected function overloadedStatusCodes(): array
     {
-        return [502, 503, 504];
+        return RetryPolicy::RETRYABLE_STATUSES;
     }
 
     /**

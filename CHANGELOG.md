@@ -4,6 +4,26 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] - 2026-09-09
+
+Closes the two gaps a consuming project hit in production and this package previously only documented: HTTP 408 on long generations and HTTP 429 under fan-out. Adds a third that the same investigation uncovered.
+
+### Added
+
+- **HTTP 429 is now retried with `Retry-After`-aware backoff.** laravel/ai maps a 429 to `RateLimitedException` and marks it failoverable, but never retries it — so under a wide fan-out one 429 is one lost request, which is exactly what the reporting project measured (roughly ten of twenty-eight in the same second). The package now backs off exponentially (500ms, 1s, 2s…, capped at 20s) and honours a `Retry-After` header when present, in both its legal forms — delay-seconds and HTTP-date. A past date clamps to zero; a delay longer than the cap is clamped rather than parking a worker for minutes. Only once the attempts are spent does it surface as `RateLimitedException` for failover. Set `retry_rate_limited => false` to restore fail-fast.
+- **`retry_attempts` provider config** (default `3`, counting the first attempt). `retry => false` still disables retrying entirely.
+- **`GatewayTimeoutException` for HTTP 408.** A gateway 408 means the request reached Cloudflare and the *generation* outran the gateway's patience — not a network failure, which arrives as cURL 28. It previously fell through laravel/ai's failover mapping as a raw `RequestException` naming nothing useful. It now throws a named exception that implements `FailoverableException`, so a configured fallback provider gets a chance. It is still attempted exactly once: the generation that took 709 seconds takes 709 seconds on the retry too.
+
+### Fixed
+
+- **Cloudflare's own edge error codes were being dropped.** `overloadedStatusCodes()` returned `[502, 503, 504]` — *narrower* than laravel/ai's own `[502, 503, 504, 520, 522, 524]`. A Cloudflare provider was silently excluding Cloudflare's 520 (unknown error), 522 (connection timed out) and 524 (origin timeout), leaving them unretried and unfailoverable. Every request here crosses Cloudflare's edge twice, once to the gateway and once to the model runner, so those codes are more likely for this provider than for a generic OpenAI-compatible one. The list now derives from `RetryPolicy::RETRYABLE_STATUSES` so the retry set and the failover set cannot drift apart again.
+- **CI was red on six of nine jobs at v0.7.0.** `streaming error event stops stream` asserted laravel/ai 0.11's `StreamErrorException` behaviour (laravel/ai#870), which 0.9 and 0.10 do not have. Latent since v0.6.1, which updated the assertion while the CI matrix still named `laravel/ai ^0.7 || ^0.8` — versions the package could no longer resolve, so those jobs never reached a test. Correcting the matrix in v0.7.0 exposed it. The assertion is now version-gated. Tests are export-ignored, so the published v0.7.0 distribution was never affected.
+
+### Changed
+
+- `RetryPolicy::defaults()` takes `retryRateLimited` and `attempts` parameters and now returns a backoff *closure* rather than a fixed integer delay, matching Illuminate's `PendingRequest::retry()` signature. `RetryPolicy::shouldRetry()`, `backoffMilliseconds()` and `retryAfterMilliseconds()` are public so a subclass or a consuming app can reuse the decisions.
+- Verified against `laravel/ai` v0.9.1, v0.10.3 and v0.11.2: 161 tests pass on each.
+
 ## [0.7.0] - 2026-09-09
 
 Re-measures the package's Cloudflare assumptions against a live AI Gateway and corrects the ones that were wrong, then adds the two controls the measurements argued for: `reasoning_effort` and failure on a non-answer. Verified against `laravel/ai` v0.11.2.
