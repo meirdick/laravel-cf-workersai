@@ -8,6 +8,7 @@ use Laravel\Ai\Messages\MessageRole;
 use Laravel\Ai\Messages\ToolResultMessage;
 use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Responses\Data\ToolCall;
+use Laravel\Ai\Responses\Data\ToolResult;
 
 trait MapsMessages
 {
@@ -114,7 +115,7 @@ trait MapsMessages
             $chatMessages[] = [
                 'role' => 'tool',
                 'tool_call_id' => $toolResult->resultId ?? $toolResult->id,
-                'content' => $this->serializeToolResultOutput($toolResult->result),
+                'content' => $this->serializeToolResult($toolResult),
             ];
         }
     }
@@ -135,15 +136,31 @@ trait MapsMessages
     }
 
     /**
+     * Serialize a tool result to the string sent back to the model.
+     *
+     * laravel/ai 1.x owns this on `ToolResult::text()` (PR #997), which
+     * encodes arrays with JSON_UNESCAPED_SLASHES and JSON_UNESCAPED_UNICODE
+     * so a model does not read `https:\/\/` or `\u00e9` inside a result.
+     * Earlier versions have no such method, so the same encoding is applied
+     * here.
+     */
+    protected function serializeToolResult(ToolResult $toolResult): string
+    {
+        return method_exists($toolResult, 'text')
+            ? $toolResult->text()
+            : $this->serializeToolResultOutput($toolResult->result);
+    }
+
+    /**
      * Serialize a tool result output value to a string.
      */
     protected function serializeToolResultOutput(mixed $output): string
     {
-        if (is_string($output)) {
-            return $output;
-        }
-
-        return is_array($output) ? json_encode($output) : strval($output);
+        return match (true) {
+            is_string($output) => $output,
+            is_array($output) => (string) json_encode($output, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE),
+            default => strval($output),
+        };
     }
 
     /**

@@ -215,7 +215,7 @@ trait HandlesTextStreaming
         // just as it does on the non-streaming path (re-measured 2026-09-09),
         // so the reason is mapped as sent. The v0.6.1 completion-token
         // heuristic is gone — see ParsesTextResponses::extractFinishReason.
-        return new StepResponse(
+        return $this->withReasoning(new StepResponse(
             text: $currentText,
             toolCalls: $toolCalls,
             finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
@@ -224,7 +224,7 @@ trait HandlesTextStreaming
             providerContentBlocks: filled($currentReasoning)
                 ? ['reasoning_content' => $currentReasoning]
                 : [],
-        );
+        ), $currentReasoning);
     }
 
     /**

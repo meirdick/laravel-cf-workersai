@@ -4,6 +4,29 @@ All notable changes to `meirdick/laravel-cf-workersai` will be documented in thi
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Ships as `dev-main` (branch alias `1.0.x-dev`) until laravel/ai tags 1.0; this package tags 1.0.0 then.
+
+Audit against laravel/ai's `1.x` branch (9de5156, 103 commits past v0.11.2, no 1.0 tag yet). Nothing this package works around is fixed upstream: the loop still never branches on `FinishReason::Length`, `reasoning_effort` still appears nowhere, `Usage` and `Meta` still have no extensible field, 429 is still not retried, and 408 still falls through as a raw `RequestException`. The existing suite passed unchanged on `1.x-dev`. What follows aligns the package with the upstream additions that do touch a gateway.
+
+### Added
+
+- **`laravel/ai ^1.0` is allowed** and the CI matrix runs `1.x-dev` alongside `^0.9`, `^0.10` and `^0.11`.
+- **The `headers` connection key is honoured.** laravel/ai 0.10.3 gave every provider a `headers` array; 1.x's `Provider::withHeaders()` and the `ai_sdk_extra_headers` provider option write into it. This client never read it, so a configured header, and on 1.x every per-call header, was silently dropped. Configured headers now layer over the package's own with the same rule as laravel/ai's `CreatesClient`: case-insensitive names, last writer wins. Sent on chat, streaming and embeddings.
+- **`StepResponse::$reasoning` is filled** on laravel/ai 1.x (PR #975), on both the non-streaming and streaming paths, from the same field the package already replays as `reasoning_content`. Guarded by `property_exists()` so earlier versions are unaffected.
+- **Per-call provider options** from 1.x's `TextGenerationOptions::withProviderOptions()` reach the request body. No code change was needed; the package already reads `$options->providerOptions()`, which 1.x merges. Noted here so nobody goes looking.
+
+### Changed
+
+- **`Usage::$promptTokens` now excludes cached tokens.** laravel/ai 0.11.1 redefined the field on every OpenAI-shaped provider as the uncached count, with `cacheReadInputTokens` holding the cached remainder (laravel/ai#909, #924). The package reported the wire `prompt_tokens` unchanged, so a consumer switching from the built-in driver saw prompt counts jump by the cache hit. The split now matches on every supported laravel/ai version, clamped at zero. `UsageTokens::rawPromptTokens()` returns the wire figure, and `WorkersAiUsageReported::$promptTokens` follows `Usage`. Guess: Cloudflare's `prompt_tokens` includes cached tokens, as OpenAI's does. Not measured live.
+- **Array tool results are encoded with `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`**, matching laravel/ai 1.x's `ToolResult::text()` (PR #997), which is used directly where it exists. A model no longer reads `https:\/\/` inside a replayed MCP result.
+- **`reasoning_tokens` is also read from `completion_tokens_details`**, where laravel/ai's OpenAI-compatible gateway reads it. The top-level key still wins.
+
+### Verified
+
+- laravel/ai v0.9.1: 200 passed, 49 skipped. v0.10.3: 203 passed, 46 skipped. v0.11.2: 203 passed, 46 skipped. `1.x-dev` at 9de5156: 206 passed, 43 skipped.
+
 ## [0.8.2] - 2026-09-09
 
 ### Added

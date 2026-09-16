@@ -84,15 +84,35 @@ trait ParsesTextResponses
             $toolCall['id'] ?? null,
         ), $rawToolCalls);
 
-        return new StepResponse(
+        $providerContentBlocks = $this->extractProviderContentBlocks($message);
+
+        return $this->withReasoning(new StepResponse(
             text: $text,
             toolCalls: $mappedToolCalls,
             finishReason: $finishReason,
             usage: $usage,
             meta: new Meta($provider->name(), $model),
             structured: $structured ? $this->decodeStructuredOutput($text) : null,
-            providerContentBlocks: $this->extractProviderContentBlocks($message),
-        );
+            providerContentBlocks: $providerContentBlocks,
+        ), $providerContentBlocks['reasoning_content'] ?? '');
+    }
+
+    /**
+     * Carry the reasoning a turn produced onto the step response.
+     *
+     * laravel/ai 1.x added `StepResponse::$reasoning` (PR #975) so the
+     * chain of thought reaches the agent response and the conversation
+     * store instead of living only in `providerContentBlocks`. Versions
+     * before 1.x have no such property, and passing it as a constructor
+     * argument there is a fatal error, so it is assigned only when present.
+     */
+    protected function withReasoning(StepResponse $step, string $reasoning): StepResponse
+    {
+        if ($reasoning !== '' && property_exists($step, 'reasoning')) {
+            $step->reasoning = $reasoning;
+        }
+
+        return $step;
     }
 
     /**

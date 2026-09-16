@@ -3,6 +3,7 @@
 namespace Meirdick\WorkersAi\Gateway\Concerns;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use Laravel\Ai\Exceptions\AiException;
@@ -30,6 +31,15 @@ trait CreatesWorkersAiClient
      * and it retries *inside* your single HTTP request. If your gateway is
      * configured with `retry_max_attempts`, its retries multiply against
      * these, and against your client timeout. Pick one layer.
+     *
+     * Headers are layered the way laravel/ai's own `CreatesClient` layers
+     * them: the package's own headers first, then the provider config's
+     * `headers` array on top, matched case-insensitively so a configured
+     * header replaces a package header of the same name. That `headers`
+     * key is what laravel/ai 0.10.3 introduced for every provider, and
+     * what 1.x's `Provider::withHeaders()` and the `ai_sdk_extra_headers`
+     * provider option write into. Through 0.8.2 this client never read it,
+     * so both were silently dropped here.
      */
     protected function client(Provider $provider, ?int $timeout = null): PendingRequest
     {
@@ -47,8 +57,10 @@ trait CreatesWorkersAiClient
             ));
         }
 
+        $headers = [];
+
         if (! empty($additionalConfig['session_affinity'])) {
-            $client->withHeaders(['x-session-affinity' => $additionalConfig['session_affinity']]);
+            $headers['x-session-affinity'] = $additionalConfig['session_affinity'];
         }
 
         // Authenticated Gateway. When an AI Gateway is created with
@@ -59,12 +71,34 @@ trait CreatesWorkersAiClient
         // Cloudflare `{"code":10000,"message":"Authentication error"}` that
         // names neither the gateway nor the missing header.
         if (! empty($additionalConfig['gateway_token'])) {
-            $client->withHeaders([
-                'cf-aig-authorization' => 'Bearer '.$additionalConfig['gateway_token'],
-            ]);
+            $headers['cf-aig-authorization'] = 'Bearer '.$additionalConfig['gateway_token'];
         }
 
-        return $client;
+        return $client->withHeaders($this->mergeConfiguredHeaders(
+            $headers,
+            is_array($additionalConfig['headers'] ?? null) ? $additionalConfig['headers'] : [],
+        ));
+    }
+
+    /**
+     * Merge the provider config's `headers` over the package's own headers.
+     *
+     * Same rule as laravel/ai's `CreatesClient::createClient()`: names match
+     * case-insensitively, the last writer wins, and the first spelling seen
+     * is the one sent. That trait only exists from 0.10.3 and the package
+     * still supports 0.9, so the rule is applied here rather than imported.
+     *
+     * @param  array<string, string>  $headers
+     * @param  array<string, string>  $configuredHeaders
+     * @return array<string, string>
+     */
+    protected function mergeConfiguredHeaders(array $headers, array $configuredHeaders): array
+    {
+        return collect($headers)
+            ->merge($configuredHeaders)
+            ->groupBy(fn (mixed $value, string $name): string => strtolower($name), preserveKeys: true)
+            ->mapWithKeys(fn (Collection $group): array => [$group->keys()->first() => $group->last()])
+            ->all();
     }
 
     /**

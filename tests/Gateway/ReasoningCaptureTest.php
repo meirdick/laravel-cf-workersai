@@ -70,3 +70,65 @@ test('a response without reasoning omits reasoning_content from the follow-up', 
 
     expect(followUpAssistantMessage())->not->toHaveKey('reasoning_content');
 });
+
+/*
+ * laravel/ai 1.x added `StepResponse::$reasoning` (PR #975) so a turn's
+ * chain of thought survives to the response and the conversation store.
+ * The package fills it from the same field it replays as
+ * `reasoning_content`. Earlier versions have no such property, so the
+ * assignment is guarded and these expectations do not apply there.
+ */
+test('the reasoning a turn produced is carried onto the step response', function () {
+    if (! property_exists(\Laravel\Ai\Gateway\StepResponse::class, 'reasoning')) {
+        $this->markTestSkipped('laravel/ai '.\Composer\InstalledVersions::getPrettyVersion('laravel/ai').' has no StepResponse::$reasoning.');
+    }
+
+    $payload = workersAiTextResponse('42');
+    $payload['choices'][0]['message']['reasoning'] = 'Six times seven.';
+
+    Http::fake(['api.cloudflare.com/*' => Http::response($payload)]);
+
+    $provider = app(\Laravel\Ai\AiManager::class)->instance('workersai');
+
+    $step = $provider->textGateway()->generateTextStep(
+        $provider, '@cf/moonshotai/kimi-k2.6', null,
+        [new \Laravel\Ai\Messages\UserMessage('6 x 7?')], [], null, null, null,
+        new \Laravel\Ai\Gateway\StepContext,
+    );
+
+    expect($step->reasoning)->toBe('Six times seven.')
+        ->and($step->providerContentBlocks['reasoning_content'])->toBe('Six times seven.');
+});
+
+test('streamed reasoning is carried onto the step response', function () {
+    if (! property_exists(\Laravel\Ai\Gateway\StepResponse::class, 'reasoning')) {
+        $this->markTestSkipped('laravel/ai '.\Composer\InstalledVersions::getPrettyVersion('laravel/ai').' has no StepResponse::$reasoning.');
+    }
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            $this->ssePayload([
+                $this->chatChunkReasoning('Six '),
+                $this->chatChunkReasoning('times seven.'),
+                $this->chatChunk(['content' => '42']),
+                $this->chatChunkFinish('stop'),
+                '[DONE]',
+            ]),
+            headers: ['Content-Type' => 'text/event-stream'],
+        ),
+    ]);
+
+    $provider = app(\Laravel\Ai\AiManager::class)->instance('workersai');
+
+    $generator = $provider->textGateway()->generateStreamStep(
+        'inv-1', $provider, '@cf/moonshotai/kimi-k2.6', null,
+        [new \Laravel\Ai\Messages\UserMessage('6 x 7?')], [], null, null, null,
+        new \Laravel\Ai\Gateway\StepContext,
+    );
+
+    foreach ($generator as $event) {
+        //
+    }
+
+    expect($generator->getReturn()->reasoning)->toBe('Six times seven.');
+});

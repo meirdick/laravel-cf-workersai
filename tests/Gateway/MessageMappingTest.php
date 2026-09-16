@@ -133,3 +133,37 @@ test('document attachments throw exception', function () {
     );
 })->throws(InvalidArgumentException::class);
 
+
+/*
+ * laravel/ai 1.x moved tool-result serialization onto `ToolResult::text()`
+ * (PR #997) so every gateway encodes array results with
+ * JSON_UNESCAPED_SLASHES and JSON_UNESCAPED_UNICODE. A `Tool::handle()`
+ * returns a string, so array results arrive through replayed history (MCP
+ * tools, stored conversations). The package applies the same encoding on
+ * every supported laravel/ai version.
+ */
+test('array tool results in replayed history are encoded without escaped slashes or unicode', function () {
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse('Done'))]);
+
+    $provider = app(\Laravel\Ai\AiManager::class)->instance('workersai');
+
+    $provider->textGateway()->generateTextStep(
+        $provider, '@cf/meta/llama-3.2-3b-instruct', null,
+        [
+            new \Laravel\Ai\Messages\UserMessage('Look it up'),
+            new \Laravel\Ai\Messages\AssistantMessage('', collect([
+                new \Laravel\Ai\Responses\Data\ToolCall('call_1', 'lookup', []),
+            ])),
+            new \Laravel\Ai\Messages\ToolResultMessage(collect([
+                new \Laravel\Ai\Responses\Data\ToolResult('call_1', 'lookup', [], [
+                    'url' => 'https://example.com/café', 'name' => 'Café',
+                ]),
+            ])),
+        ],
+        [], null, null, null, new \Laravel\Ai\Gateway\StepContext,
+    );
+
+    $toolMessage = collect(lastRequestBody()['messages'])->firstWhere('role', 'tool');
+
+    expect($toolMessage['content'])->toBe('{"url":"https://example.com/café","name":"Café"}');
+});

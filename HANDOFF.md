@@ -128,7 +128,7 @@ Note what rows two and three show: the reason is right, but the *answer* is empt
 
 ## 6. The silent non-answer
 
-`Laravel\Ai\Gateway\TextGenerationLoop` never branches on `FinishReason::Length` — grep laravel/ai v0.11.2 and you will find no reference to it in the loop. A truncated or empty step ends the loop and is returned as an ordinary successful response. `$response->text` is `''`. On a structured agent, `toArray()` is `[]`. There is no exception and the HTTP status is 200.
+`Laravel\Ai\Gateway\TextGenerationLoop` never branches on `FinishReason::Length` — grep laravel/ai v0.11.2 or the `1.x` branch (9de5156, 2026-09-16) and you will find no reference to it in the loop. A truncated or empty step ends the loop and is returned as an ordinary successful response. `$response->text` is `''`. On a structured agent, `toArray()` is `[]`. There is no exception and the HTTP status is 200.
 
 For an unattended drafting or extraction pipeline that is indistinguishable from a genuine short answer, and it is the most expensive failure mode Workers AI has. Two config switches address it:
 
@@ -139,7 +139,7 @@ Both extend `Laravel\Ai\Exceptions\AiException`, so existing `catch (AiException
 
 ## 7. `reasoning_effort`
 
-The single highest-leverage parameter on this platform, and laravel/ai does not know it exists — the string appears nowhere in v0.11.2.
+The single highest-leverage parameter on this platform, and laravel/ai does not know it exists — the string appears nowhere in v0.11.2 or on the `1.x` branch at 9de5156.
 
 Measured on `@cf/openai/gpt-oss-120b`, one two-sentence question, 2026-09-09:
 
@@ -259,6 +259,27 @@ Row two is the one that matters most for the composer constraint: the package wa
 
 Row three's three failures are `table agent_conversations has no column named participant_type` — laravel/ai's own schema moved between 0.9 and 0.11. Pinning the package back to 0.6.1 on laravel/ai 0.11.2 reproduces them exactly, which is how they were attributed. Do not let this one scare you off a release; do check the app's published laravel/ai migrations.
 
+## 12a. laravel/ai 1.x audit (2026-09-16)
+
+Audited against the `1.x` branch at 9de5156, 103 commits past v0.11.2, no 1.0 tag yet. The gateway contracts (`StepTextGateway`, `EmbeddingGateway`) are byte-identical to v0.11.2 and the 0.8.2 suite passed on `1.x-dev` without edits.
+
+None of §2, §6, §7, §8 or §11 is addressed upstream. What 1.x adds that touches a gateway, and what `main` (unreleased, tags as 1.0.0 with laravel/ai 1.0) did about each:
+
+| Upstream change | Package response |
+|---|---|
+| `headers` connection key (0.10.3), `Provider::withHeaders()` and `ai_sdk_extra_headers` (1.x) | Client now merges `headers` over its own, case-insensitively. Was silently ignored. |
+| `TextGenerationOptions::withProviderOptions()` per-call options (1.x) | Free. `$options->providerOptions()` already merges them. |
+| `StepResponse::$reasoning` (1.x #975) | Filled on both paths when the property exists. Nothing in the 1.x loop reads it yet except the fake gateway and middleware. |
+| `ToolResult::text()` (1.x #997) | Used where it exists; same encoding flags applied on older versions. |
+| Cached tokens subtracted from `promptTokens` (0.11.1 #909/#924) | Adopted on all versions. |
+| Per-step agent middleware, `PendingStep`, `StepResult` (1.x #979) | Loop-level. The gateway receives `$step->model`, which middleware may change; the package resolves the model name per call, so that already works. |
+| Sub-agent streaming by default (1.x #802) | Loop-level. No gateway change. |
+| Hosted code execution provider tool (1.x #970) | Not offered by Workers AI. `MapsTools` still rejects every `ProviderTool`. |
+| `ResolvesDocumentFilenames` (1.x) | N/A. Document attachments are rejected here. |
+| Vercel `toVercelProtocolArray()` removed from stream events (1.x) | The package never called it. |
+
+Re-run the audit when 1.0 is tagged: `git diff 9de5156...v1.0.0 -- src/Contracts src/Gateway/StepResponse.php src/Gateway/TextGenerationOptions.php src/Gateway/TextGenerationLoop.php src/Gateway/OpenAiCompatible` in a laravel/ai checkout is the whole job.
+
 ## 13. Tests
 
 ```bash
@@ -268,7 +289,7 @@ vendor/bin/pest tests/Gateway/ReasoningEffortTest.php
 vendor/bin/pest --filter='truncated'
 ```
 
-192 tests pass; 43 skip without live credentials. There is no static analysis and no formatter configured — do not add one as a drive-by.
+203 tests pass on laravel/ai v0.11.2; 46 skip without live credentials or on a laravel/ai version that lacks the feature under test. There is no static analysis and no formatter configured — do not add one as a drive-by.
 
 `tests/Gateway/` covers the unit surface against `Http::fake()`:
 
@@ -288,17 +309,19 @@ vendor/bin/pest --filter='truncated'
 | `ErrorHandlingTest`, `RetryPolicyTest` | Cloudflare error envelopes, retry decisions, backoff and `Retry-After` parsing |
 | `ToolCallLoopTest`, `SubAgentTest` | Tool loop and `CanActAsTool` |
 | `CredentialsTest` | `key` / `api_key` resolution |
+| `HeadersTest` | The `headers` connection key on all three request paths, precedence over package headers, `Provider::withHeaders()` on 1.x |
+| `UsageMappingTest` | Cached-token subtraction on both paths, the zero clamp, `completion_tokens_details.reasoning_tokens` |
 
 `tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
 
-CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11`.
+CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11` and `1.x-dev`. The `1.x-dev` jobs track an unreleased branch and may go red on an upstream change before this package does anything wrong; read the failure before reacting.
 
 ## 14. Deliberately not handled
 
 - **Concurrency limiting and request splitting.** 408 and 429 are handled (§11), but nothing throttles a fan-out or splits an over-large generation. Those belong in the consuming application, which knows the shape and urgency of the work.
 - **Streaming does not enforce the empty/truncation guards.** They run on `generateTextStep()` only. A stream surfaces the finish reason on `StreamEnd` and the caller decides.
 - **No neuron budgeting.** The figure is reported; nothing enforces a ceiling.
-- **`#[CacheInstructions]` is inert here.** Verified in laravel/ai v0.11.2: it is resolved onto `TextGenerationOptions` for every provider, but consumed only by the Anthropic gateway (`applyPromptCacheBreakpoints`) and the Bedrock gateway (`cachePoint`). No OpenAI-compatible provider, this one included, does anything with it. Workers AI's prefix cache is driven by `session_affinity` instead, and its hits show up in `usage.prompt_tokens_details.cached_tokens`, which the package maps to `Usage::$cacheReadInputTokens`.
+- **`#[CacheInstructions]` is inert here.** Verified in laravel/ai v0.11.2: it is resolved onto `TextGenerationOptions` for every provider, but consumed only by the Anthropic gateway (`applyPromptCacheBreakpoints`) and the Bedrock gateway (`cachePoint`). No OpenAI-compatible provider, this one included, does anything with it. Workers AI's prefix cache is driven by `session_affinity` instead, and its hits show up in `usage.prompt_tokens_details.cached_tokens`, which the package maps to `Usage::$cacheReadInputTokens` and, since the post-0.8.2 `main`, subtracts from `Usage::$promptTokens` the way laravel/ai 0.11.1 does on every OpenAI-shaped provider.
 - **No model catalog.** Model IDs are strings you supply. Nothing validates that a model exists, is current, or supports tools. Cloudflare returns `410 Model has been deprecated` for a retired model and `403 This account is not allowed to access` for one your plan does not cover; both surface as readable errors, and that is as far as this goes. Both were hit while testing 0.7.0 — `@cf/meta/llama-3.1-8b-instruct` is retired (it was the `#[UseCheapestModel]` default through 0.6.1, so that attribute was broken) and `@cf/zai-org/glm-5.3` is not enabled on every account. **The defaults in `WorkersAiProvider` will rot. Check them when a release feels overdue.**
 - **Structured-output validation is deliberately shallow.** It checks required fields and enums, not a full JSON Schema. It targets the failure Workers AI actually produces — a well-formed object with an empty required field — without pulling in a validator dependency.
 - **No Prism support in this package.** `Cloudflare\BaseUrl` and `ModelPrefix` carry comments about "the Prism path" because they were extracted from a codebase that had one. Only the laravel/ai path ships here.

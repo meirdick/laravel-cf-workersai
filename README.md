@@ -19,7 +19,7 @@ A native [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Wo
 ## Requirements
 
 - PHP `^8.3`
-- `laravel/ai ^0.9 || ^0.10 || ^0.11` (tested against v0.11.2)
+- `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0` (tested against v0.9.1, v0.10.3, v0.11.2 and the `1.x` branch at 9de5156)
 
 Need `laravel/ai ^0.7 || ^0.8`? Use `meirdick/laravel-cf-workersai ^0.5`.
 
@@ -390,6 +390,23 @@ Set the `gateway` config key to route through Cloudflare AI Gateway. You get fre
 
 A session-affinity header is sent automatically so successive related requests hit the same cache shard.
 
+### Custom headers
+
+laravel/ai's `headers` connection key is honoured, as it is on every first-party provider since 0.10.3. A configured header replaces a package header of the same name, matched case-insensitively.
+
+```php
+'workers-ai' => [
+    // ...
+    'headers' => ['X-Trace-Id' => env('TRACE_ID')],
+],
+```
+
+On laravel/ai 1.x the `ai_sdk_extra_headers` provider option and `Provider::withHeaders()` write into the same key, so per-call headers reach Workers AI too.
+
+### Token counts
+
+`Usage::$promptTokens` is the **uncached** prompt count and `Usage::$cacheReadInputTokens` the cached remainder, so the two add up to the wire `prompt_tokens`. This is the split laravel/ai 0.11.1 adopted for every OpenAI-shaped provider; the package follows it on every laravel/ai version it supports, so switching between the built-in `openai-compatible` driver and this one does not change the numbers.
+
 ## Models
 
 Workers AI hosts dozens of open-weight models. See the [Cloudflare Workers AI models catalog](https://developers.cloudflare.com/workers-ai/models/) for current options. Common prefixes:
@@ -441,7 +458,7 @@ Two things to expect on that path, neither caused by this package:
 
 ## Versioning
 
-This package follows [Semantic Versioning](https://semver.org/). Version 0.6+ requires `laravel/ai ^0.9` (the single-step `StepTextGateway` contract); use `^0.5` of this package for `laravel/ai ^0.7 || ^0.8`.
+This package follows [Semantic Versioning](https://semver.org/). `laravel/ai ^1.0` support is on `main` (branch alias `1.0.x-dev`, install with `"meirdick/laravel-cf-workersai": "1.0.x-dev"`) and tags as 1.0.0 when laravel/ai tags 1.0. Version 0.6+ requires `laravel/ai ^0.9` (the single-step `StepTextGateway` contract); use `^0.5` of this package for `laravel/ai ^0.7 || ^0.8`.
 
 ## License
 

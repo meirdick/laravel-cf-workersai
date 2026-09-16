@@ -21,9 +21,28 @@ namespace Meirdick\WorkersAi\Cloudflare;
 final class UsageTokens
 {
     /**
+     * Prompt tokens the model actually processed, net of any prefix-cache hit.
+     *
+     * laravel/ai 0.11.1 redefined `Usage::$promptTokens` on every
+     * OpenAI-shaped provider as the *uncached* count, with
+     * `cacheReadInputTokens` holding the cached remainder, so the two add up
+     * to the wire figure. This follows that split so a consumer sees the same
+     * numbers here as on the built-in `openai-compatible` driver. Clamped at
+     * zero in case a response reports more cached tokens than prompt tokens.
+     *
      * @param  array<string, mixed>|null  $usage  the `usage` subtree, not the full response
      */
     public static function promptTokens(?array $usage): int
+    {
+        return max(0, self::rawPromptTokens($usage) - (self::cachedTokens($usage) ?? 0));
+    }
+
+    /**
+     * Prompt tokens as reported on the wire, cached tokens included.
+     *
+     * @param  array<string, mixed>|null  $usage
+     */
+    public static function rawPromptTokens(?array $usage): int
     {
         return (int) (data_get($usage, 'prompt_tokens') ?? 0);
     }
@@ -47,7 +66,7 @@ final class UsageTokens
             return (int) $total;
         }
 
-        return self::promptTokens($usage) + self::completionTokens($usage);
+        return self::rawPromptTokens($usage) + self::completionTokens($usage);
     }
 
     /**
@@ -69,11 +88,16 @@ final class UsageTokens
      * Reasoning/thinking tokens for models that surface them. Optional; null
      * when absent so non-reasoning models don't get a misleading 0.
      *
+     * Read from the top-level `reasoning_tokens` first, then from OpenAI's
+     * `completion_tokens_details.reasoning_tokens`, which is where
+     * laravel/ai's OpenAI-compatible gateway reads it.
+     *
      * @param  array<string, mixed>|null  $usage
      */
     public static function reasoningTokens(?array $usage): ?int
     {
-        $reasoning = data_get($usage, 'reasoning_tokens');
+        $reasoning = data_get($usage, 'reasoning_tokens')
+            ?? data_get($usage, 'completion_tokens_details.reasoning_tokens');
 
         return $reasoning === null ? null : (int) $reasoning;
     }
