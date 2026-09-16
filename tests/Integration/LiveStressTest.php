@@ -15,6 +15,8 @@
 */
 
 use Illuminate\Http\Client\ConnectionException;
+use Laravel\Ai\Exceptions\ProviderConnectionException;
+use Meirdick\WorkersAi\Exceptions\EmptyResponseException;
 use Laravel\Ai\Responses\Data\FinishReason;
 use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\TextDelta;
@@ -80,22 +82,25 @@ describe('reliability sweep (direct)', function () {
     })->with(range(1, 5));
 
     test('reasoning model with tight budget is flagged, never silently empty', function (int $rep) {
-        $response = (new TinyBudgetAgent)->prompt(
-            'What is 17 * 23? Explain your reasoning in detail.',
-            provider: 'workers-ai',
-            model: STRESS_REASONING_MODEL,
-        );
-
-        $finishReason = $response->steps->last()->finishReason;
-
         // Reasoning models burn the budget on thinking and return empty
-        // content — acceptable only when flagged Length. Empty + Stop is the
-        // silent failure users hit in production.
-        if ($response->text === '') {
-            expect($finishReason)->toBe(FinishReason::Length);
-        } else {
-            expect($finishReason)->toBeIn([FinishReason::Stop, FinishReason::Length]);
+        // content. Since 0.7.0 the package refuses to hand that back as a
+        // success: `throw_on_empty_response` (default on) raises
+        // EmptyResponseException, which is the flag. Empty text with no
+        // exception is the silent failure users hit in production.
+        try {
+            $response = (new TinyBudgetAgent)->prompt(
+                'What is 17 * 23? Explain your reasoning in detail.',
+                provider: 'workers-ai',
+                model: STRESS_REASONING_MODEL,
+            );
+        } catch (EmptyResponseException $e) {
+            expect($e->getMessage())->toContain(STRESS_REASONING_MODEL);
+
+            return;
         }
+
+        expect($response->text)->not->toBe('')
+            ->and($response->steps->last()->finishReason)->toBeIn([FinishReason::Stop, FinishReason::Length]);
     })->with(range(1, 3));
 
     test('tool-call loop completes with the tool result in the answer', function (int $rep) {
@@ -136,7 +141,10 @@ describe('reliability sweep (direct)', function () {
             );
 
             $this->markTestSkipped('Model finished within the 3s timeout; cannot exercise the timeout path.');
-        } catch (ConnectionException) {
+        } catch (ConnectionException|ProviderConnectionException) {
+            // laravel/ai 0.11 rethrows the Illuminate exception as
+            // ProviderConnectionException so failover can react; 0.9 and
+            // 0.10 let the Illuminate one through.
             $elapsed = microtime(true) - $start;
 
             // Pre-fix behavior: 3 attempts x 3s + backoff ≈ 10s+. Post-fix:

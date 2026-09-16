@@ -23,8 +23,13 @@ Audit against laravel/ai's `1.x` branch (9de5156, 103 commits past v0.11.2, no 1
 - **Array tool results are encoded with `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`**, matching laravel/ai 1.x's `ToolResult::text()` (PR #997), which is used directly where it exists. A model no longer reads `https:\/\/` inside a replayed MCP result.
 - **`reasoning_tokens` is also read from `completion_tokens_details`**, where laravel/ai's OpenAI-compatible gateway reads it. The top-level key still wins.
 
+### Fixed
+
+- **Two stale live-stress expectations.** `reasoning model with tight budget is flagged` asserted empty text plus `Length`; since 0.7.0 the package throws `EmptyResponseException` instead, which is the flag. `a transfer timeout fails fast` caught only Illuminate's `ConnectionException`; laravel/ai 0.11 rethrows it as `ProviderConnectionException`. Both tests are skipped without `WORKERS_AI_E2E_STRESS=1`, so CI never saw them. Live sweep 2026-09-16: 36 passed.
+
 ### Verified
 
+- Live, 2026-09-16, on the direct API and an AI Gateway: 7 integration tests and the 36-test stress sweep pass. The `headers` key reached Cloudflare, and the cached-token split was checked through the package (5 uncached / 1216 cached against wire `prompt_tokens: 1221`).
 - laravel/ai v0.9.1: 200 passed, 49 skipped. v0.10.3: 203 passed, 46 skipped. v0.11.2: 203 passed, 46 skipped. `1.x-dev` at 9de5156: 206 passed, 43 skipped.
 
 ## [0.8.2] - 2026-09-09
