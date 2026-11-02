@@ -6,7 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Not tagged. This release adds laravel/ai 1.x support to the 0.x line in one codebase.
+## [1.0.0] - 2026-11-02
+
+First stable release. Adds laravel/ai 1.x support. One codebase supports laravel/ai 0.9 to 1.3. Upgrade notes for apps on 0.8.x: see [Upgrading](README.md#upgrading) in the README.
 
 ### Added
 

@@ -489,9 +489,14 @@ Model IDs are strings you supply. The package does not check that a model exists
 
 Use `workers-ai` (primary) or `workersai` (alias).
 
-## Upgrading to 0.7.0
+## Upgrading
 
 Verified on four consuming applications before release. Three upgraded with no test changes. The fourth hit a laravel/ai issue, not a package issue.
+
+**From 0.8.x.** Run `composer require "meirdick/laravel-cf-workersai:^1.0" -W`. No config change. Check two things:
+
+1. If you read cached-token counts: on laravel/ai 0.9 to 0.11, `Usage::$promptTokens` now excludes cached tokens. On laravel/ai 1.x, `TextUsage::$inputTokens` includes them. See [Token counts](#token-counts).
+2. If you set headers on the provider: the `headers` connection key and laravel/ai 1.x `withHeaders()` are now sent. Before 1.0.0 they were dropped.
 
 **From 0.6.x.** Check three things:
 
@@ -526,7 +531,7 @@ Two things to expect. Neither is caused by this package:
 
 This package follows [Semantic Versioning](https://semver.org/).
 
-- `main` supports `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. `src/Cloudflare/SdkCompat.php` holds every difference between the 0.x and 1.x shapes.
+- Version 1.x supports `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. `src/Cloudflare/SdkCompat.php` holds every difference between the 0.x and 1.x shapes.
 - Version 0.6 and later need `laravel/ai ^0.9`, the single-step `StepTextGateway` contract.
 - Use `^0.5` of this package for `laravel/ai ^0.7 || ^0.8`.
 
