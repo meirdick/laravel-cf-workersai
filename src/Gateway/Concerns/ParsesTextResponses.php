@@ -209,11 +209,19 @@ trait ParsesTextResponses
      * per-call neuron count has nowhere to live on the SDK's response objects.
      * An event is the only place to put it that survives to the consumer.
      * Silent no-op when the response omits the field.
+     * Streamed steps dispatch it from `processTextStream()`.
      */
     protected function reportNeurons(array $data, Provider $provider, string $model, Usage $usage): void
     {
-        $neurons = UsageTokens::neurons($data['usage'] ?? []);
+        $this->dispatchNeurons(UsageTokens::neurons($data['usage'] ?? []), $provider, $model, $usage);
+    }
 
+    /**
+     * Dispatch the event for a neuron figure already read from a response or
+     * a stream. A null figure or a missing dispatcher is a silent no-op.
+     */
+    protected function dispatchNeurons(?float $neurons, Provider $provider, string $model, Usage $usage): void
+    {
         if (is_null($neurons) || ! isset($this->events)) {
             return;
         }

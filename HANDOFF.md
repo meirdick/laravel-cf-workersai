@@ -189,6 +189,8 @@ Event::listen(WorkersAiUsageReported::class, function (WorkersAiUsageReported $e
 
 One event per model call, so a two-step tool loop dispatches two. Nothing is dispatched when the response omits the field.
 
+Streamed calls dispatch it too (since 1.0.1). Cloudflare sends `usage.neurons` on every SSE chunk, with `stream_options.include_usage` set. Measured 2026-11-02 on `@cf/meta/llama-3.2-3b-instruct`, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/openai/gpt-oss-120b` and `@cf/zai-org/glm-5.3-flash`, on the direct API and on `/compat`. Early chunks carry the figure for that chunk. A zero chunk comes before the last chunk. The last finish chunk carries the call total, with the call's full token counts (llama-3.3-70b: 37 prompt, 10 completion, 3.03 neurons, equal to the sum of the earlier chunks). `HandlesTextStreaming::resolveStreamNeurons()` keeps the last positive figure and the event fires once per step after the stream ends. Do not sum the chunks.
+
 Order of magnitude: a 16-token completion on llama-3.3-70b cost 4.48 neurons. The same two-sentence prompt on gpt-oss-120b cost 9.6 neurons at `low` effort and 31.4 at `high` — reasoning is billed. A full pipeline run in the consuming project measured 17,242 neurons.
 
 ## 9. Reasoning field names
@@ -316,7 +318,7 @@ vendor/bin/pest --filter='truncated'
 | `TruncationHeuristicTest` | Finish-reason mapping (that `stop` is no longer coerced), `throw_on_truncation` on and off, streaming parity |
 | `EmptyResponseTest` | `throw_on_empty_response`, the tool-call exemption, the opt-out |
 | `ReasoningEffortTest` | Resolution order across config / attribute / provider options, value validation |
-| `NeuronUsageTest` | Event dispatch, per-step dispatch in a tool loop, absence handling |
+| `NeuronUsageTest` | Event dispatch, per-step dispatch in a tool loop, absence handling, streamed total, streamed tool loop |
 | `RequestMappingTest`, `MessageMappingTest`, `ToolMappingTest` | Body construction |
 | `StructuredOutputTest`, `StructuredOutputReaskTest` | JSON mode and the bounded re-ask |
 | `StreamingTest`, `StreamUsageAccumulationTest` | SSE parsing, the trailing all-zero usage chunk |

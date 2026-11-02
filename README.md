@@ -202,7 +202,7 @@ Event::listen(WorkersAiUsageReported::class, function (WorkersAiUsageReported $e
 });
 ```
 
-One event per model call. A two-step tool loop sends two. A cost model based on token counts gives the wrong number.
+One event per model call, streamed or not. A two-step tool loop sends two. On a stream the event fires after the last chunk and carries the call total. Cloudflare puts `usage.neurons` on every stream chunk. Early chunks hold a per-chunk figure and the last chunk holds the total. Measured 2026-11-02 on the direct API and `/compat`. A cost model based on token counts gives the wrong number.
 
 The raw HTTP response is also on the response and on each step:
 

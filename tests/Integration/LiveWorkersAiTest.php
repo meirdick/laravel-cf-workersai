@@ -16,7 +16,9 @@ use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 |   WORKERS_AI_E2E_GATEWAY=... vendor/bin/pest tests/Integration
 */
 
+use Illuminate\Support\Facades\Event;
 use Laravel\Ai\Embeddings;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
 use Laravel\Ai\Streaming\Events\StreamEnd;
 use Laravel\Ai\Streaming\Events\TextDelta;
 use Tests\Fixtures\Agents\AssistantAgent;
@@ -55,6 +57,24 @@ describe('direct Workers AI API', function () {
         expect($deltas)->not->toBeEmpty()
             ->and($ends)->toHaveCount(1)
             ->and(SdkCompat::promptTokens($ends[0]->usage))->toBeGreaterThan(0);
+    });
+
+
+    test('streaming reports neurons once', function () {
+        $seen = [];
+        Event::listen(WorkersAiUsageReported::class, function ($event) use (&$seen) {
+            $seen[] = $event;
+        });
+
+        iterator_to_array((new AssistantAgent)->stream(
+            'Count from 1 to 5, digits only.',
+            provider: 'workers-ai',
+            model: E2E_TEXT_MODEL,
+        ));
+
+        expect($seen)->toHaveCount(1)
+            ->and($seen[0]->neurons)->toBeGreaterThan(0.0)
+            ->and($seen[0]->promptTokens)->toBeGreaterThan(0);
     });
 
     test('embeddings return vectors', function () {
@@ -100,6 +120,24 @@ describe('via Cloudflare AI Gateway', function () {
 
         expect($response->text)->not->toBe('')
             ->and(strtolower($response->text))->toContain('pong');
+    });
+
+
+    test('streaming through the gateway reports neurons once', function () {
+        $seen = [];
+        Event::listen(WorkersAiUsageReported::class, function ($event) use (&$seen) {
+            $seen[] = $event;
+        });
+
+        iterator_to_array((new AssistantAgent)->stream(
+            'Count from 1 to 5, digits only.',
+            provider: 'workers-ai',
+            model: E2E_TEXT_MODEL,
+        ));
+
+        expect($seen)->toHaveCount(1)
+            ->and($seen[0]->neurons)->toBeGreaterThan(0.0)
+            ->and($seen[0]->promptTokens)->toBeGreaterThan(0);
     });
 
     test('streaming routes through the gateway', function () {

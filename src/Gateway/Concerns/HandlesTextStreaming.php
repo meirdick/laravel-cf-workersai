@@ -61,6 +61,7 @@ trait HandlesTextStreaming
         $pendingToolCalls = [];
         $toolCalls = [];
         $usage = null;
+        $neurons = null;
         $finishReason = null;
         $responseModel = $model;
 
@@ -85,6 +86,7 @@ trait HandlesTextStreaming
             if (! $choice) {
                 if (isset($data['usage'])) {
                     $usage = $this->resolveStreamUsage($usage, $data['usage']);
+                    $neurons = $this->resolveStreamNeurons($neurons, $data['usage']);
                 }
 
                 continue;
@@ -179,6 +181,7 @@ trait HandlesTextStreaming
 
             if (isset($data['usage'])) {
                 $usage = $this->resolveStreamUsage($usage, $data['usage']);
+                $neurons = $this->resolveStreamNeurons($neurons, $data['usage']);
             }
         }
 
@@ -211,6 +214,9 @@ trait HandlesTextStreaming
         }
 
         $stepUsage = $usage ?? SdkCompat::emptyTextUsage();
+
+        // One event per model call, same as the non-streamed path.
+        $this->dispatchNeurons($neurons, $provider, $model, $stepUsage);
 
         // Workers AI reports `length` accurately on the streamed finish chunk
         // just as it does on the non-streaming path (re-measured 2026-09-09),
@@ -251,6 +257,28 @@ trait HandlesTextStreaming
             && SdkCompat::cacheReadTokens($incoming) === 0;
 
         return $incomingIsEmpty ? $current : $incoming;
+    }
+
+    /**
+     * Resolve the stream's neuron total from a `usage` chunk.
+     *
+     * Cloudflare puts `usage.neurons` on every chunk. Early chunks carry the
+     * increment for that chunk. The final finish chunk carries the total for
+     * the call, and a zero-valued chunk sits before it (measured 2026-11-02,
+     * direct API and /compat). The last positive figure is the total. A zero
+     * only sticks when nothing else was seen, as with token counts.
+     *
+     * @param  array<string, mixed>  $usagePayload
+     */
+    protected function resolveStreamNeurons(?float $current, array $usagePayload): ?float
+    {
+        $incoming = UsageTokens::neurons($usagePayload);
+
+        if ($incoming === null) {
+            return $current;
+        }
+
+        return ($incoming > 0.0 || $current === null) ? $incoming : $current;
     }
 
     /**

@@ -35,9 +35,11 @@ The event has these public properties:
 
 The package dispatches nothing when the response has no `neurons` field.
 
-<Aside type="caution" title="Streaming">
-  The package does not dispatch this event for streamed requests. For streams, read usage from the `StreamEnd` event.
-</Aside>
+## Streamed requests
+
+The package dispatches the event for streamed requests too. It fires once per model call, after the last chunk, with the call total. Cloudflare sends `usage.neurons` on every stream chunk. Early chunks hold a per-chunk figure and the last chunk holds the total, so the package uses the last one and does not add the chunks. A streamed tool loop dispatches one event per step.
+
+`$response->raw` is not set on a stream. Use the event.
 
 ## Read the raw response
 

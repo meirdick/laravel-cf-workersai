@@ -87,3 +87,100 @@ test('UsageTokens reads fractional neurons and tolerates absence', function () {
         ->and(UsageTokens::neurons(['neurons' => null]))->toBeNull()
         ->and(UsageTokens::neurons(null))->toBeNull();
 });
+
+/*
+|--------------------------------------------------------------------------
+| Streamed neurons
+|--------------------------------------------------------------------------
+|
+| Measured 2026-11-02 on the direct API and /compat: every chunk carries
+| `usage.neurons`. Early chunks hold the per-chunk increment, a zero chunk
+| precedes the last, and the last finish chunk holds the call total.
+|
+*/
+test('a streamed call dispatches the final neuron total once', function () {
+    Event::fake([WorkersAiUsageReported::class]);
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            body: $this->ssePayload([
+                [...$this->chatChunk(['role' => 'assistant', 'content' => 'Hi']), 'usage' => [
+                    'prompt_tokens' => 37, 'completion_tokens' => 0, 'neurons' => 0.9867,
+                ]],
+                [...$this->chatChunk(['content' => '!']), 'usage' => [
+                    'prompt_tokens' => 0, 'completion_tokens' => 1, 'neurons' => 0.2048,
+                ]],
+                $this->chatChunkFinish('stop', [
+                    'prompt_tokens' => 0, 'completion_tokens' => 0, 'total_tokens' => 0, 'neurons' => 0,
+                ]),
+                $this->chatChunkFinish('stop', [
+                    'prompt_tokens' => 37, 'completion_tokens' => 10, 'total_tokens' => 47,
+                    'prompt_tokens_details' => ['cached_tokens' => 7], 'neurons' => 3.0347,
+                ]),
+                '[DONE]',
+            ]),
+            status: 200,
+            headers: ['Content-Type' => 'text/event-stream'],
+        ),
+    ]);
+
+    $this->collectStreamEvents();
+
+    Event::assertDispatchedTimes(WorkersAiUsageReported::class, 1);
+    Event::assertDispatched(WorkersAiUsageReported::class, fn ($event) => $event->neurons === 3.0347
+        && $event->model === '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+        && $event->promptTokens === 30
+        && $event->completionTokens === 10);
+});
+
+test('a streamed call without neurons dispatches nothing', function () {
+    Event::fake([WorkersAiUsageReported::class]);
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::response(
+            body: $this->ssePayload([
+                $this->chatChunk(['role' => 'assistant', 'content' => 'Hi']),
+                $this->chatChunkFinish('stop', ['prompt_tokens' => 10, 'completion_tokens' => 5]),
+                '[DONE]',
+            ]),
+            status: 200,
+            headers: ['Content-Type' => 'text/event-stream'],
+        ),
+    ]);
+
+    $this->collectStreamEvents();
+
+    Event::assertNotDispatched(WorkersAiUsageReported::class);
+});
+
+test('a streamed tool loop dispatches one event per step', function () {
+    Event::fake([WorkersAiUsageReported::class]);
+
+    Http::fake([
+        'api.cloudflare.com/*' => Http::sequence([
+            Http::response(
+                body: $this->ssePayload([
+                    $this->chatChunkToolCallStart(0, 'call_123', 'FixedNumberGenerator'),
+                    $this->chatChunkToolCallDelta(0, '{}'),
+                    $this->chatChunkFinish('tool_calls', ['prompt_tokens' => 20, 'completion_tokens' => 10, 'neurons' => 2.5]),
+                    '[DONE]',
+                ]),
+                status: 200,
+                headers: ['Content-Type' => 'text/event-stream'],
+            ),
+            Http::response(
+                body: $this->ssePayload([
+                    $this->chatChunk(['role' => 'assistant', 'content' => 'The number is 72019']),
+                    $this->chatChunkFinish('stop', ['prompt_tokens' => 30, 'completion_tokens' => 5, 'neurons' => 1.5]),
+                    '[DONE]',
+                ]),
+                status: 200,
+                headers: ['Content-Type' => 'text/event-stream'],
+            ),
+        ]),
+    ]);
+
+    $this->collectStreamEvents(new Tests\Fixtures\Agents\ProviderOptionsWithToolsAgent);
+
+    Event::assertDispatchedTimes(WorkersAiUsageReported::class, 2);
+});
