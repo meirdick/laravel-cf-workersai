@@ -4,17 +4,7 @@
     "homepage": "https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/",
     "type": "library",
     "license": "MIT",
-    "keywords": [
-        "laravel",
-        "ai",
-        "cloudflare",
-        "workers-ai",
-        "laravel-ai",
-        "ai-gateway",
-        "llm",
-        "embeddings",
-        "reasoning"
-    ],
+    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway", "llm", "embeddings", "reasoning"],
     "authors": [
         {
             "name": "Meir Dick",
