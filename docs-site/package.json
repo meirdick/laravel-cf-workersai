@@ -10,9 +10,9 @@
     "typecheck": "astro check",
     "lint:docs": "nimbus-docs lint",
     "lint:docs:fix": "nimbus-docs lint --fix",
-    "prepreview:cf": "astro build",
+    "prepreview:cf": "astro build && sh scripts/stage.sh",
     "preview:cf": "wrangler dev",
-    "predeploy": "astro check && astro build",
+    "predeploy": "astro check && astro build && sh scripts/stage.sh",
     "deploy": "wrangler deploy"
   },
   "dependencies": {

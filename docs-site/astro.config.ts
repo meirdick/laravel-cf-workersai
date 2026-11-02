@@ -9,7 +9,7 @@ const nimbusConfig = defineNimbusConfig({
   // TODO: set this to the canonical origin of the home site (no trailing
   // slash) before deploy. Drives canonical URLs, OG image URLs, robots.txt,
   // sitemap and /llms.txt links. The docs are served under `base` below.
-  site: "https://example.com",
+  site: "https://laravel-cf-workersai-docs.mdick85.workers.dev",
   title: "laravel-cf-workersai",
   description:
     "Documentation for laravel-cf-workersai, a Laravel AI provider for Cloudflare Workers AI and AI Gateway.",

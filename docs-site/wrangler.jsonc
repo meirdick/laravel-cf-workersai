@@ -1,9 +1,9 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "docs-site",
+  "name": "laravel-cf-workersai-docs",
   "compatibility_date": "2026-11-02",
   "assets": {
-    "directory": "./dist",
+    "directory": "./.deploy",
     "not_found_handling": "404-page"
   }
 }
