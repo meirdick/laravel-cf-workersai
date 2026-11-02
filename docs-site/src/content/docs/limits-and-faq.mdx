@@ -13,6 +13,7 @@ sidebar:
 - No request concurrency limit. The package retries HTTP 429. It does not prevent it.
 - No neuron event for streamed requests.
 - The package does not check model names.
+- The package does not set up your AI Gateway. Create and configure it in the Cloudflare dashboard.
 - Reasoning controls depend on the model. `reasoning_effort` is ignored by some models.
 - Timing and rate figures in these docs come from tests on one account. Your results can differ.
 
@@ -24,7 +25,16 @@ No. Set only `account_id` to call Workers AI directly. Add `gateway` to get logs
 
 ### What is the difference between this package and the openai-compatible driver?
 
-The Laravel AI `openai-compatible` driver works with the Cloudflare `/compat` URL. This package adds a default token cap, empty-response detection, `reasoning_effort`, neuron events, 429 retry and gateway token support. See the [Overview](/).
+The Laravel AI `openai-compatible` driver works with the Cloudflare `/compat` URL. If you use one model for text and set `#[MaxTokens]` on every agent, that driver can be enough.
+
+Use this package when you need one or more of these:
+
+- A default token cap. Without a cap, Cloudflare stops most models at 256 tokens.
+- An exception when a reasoning model spends its whole budget on thinking and returns nothing.
+- `reasoning_effort` control.
+- Neuron figures for cost tracking.
+- Automatic retry of HTTP 429 and of Cloudflare edge errors.
+- An AI Gateway with Authenticated Gateway turned on.
 
 ### Which token permission do I need?
 
