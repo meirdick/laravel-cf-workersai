@@ -2,6 +2,8 @@
 
 A [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). Supports [Cloudflare AI Gateway](https://developers.cloudflare.com/ai-gateway/).
 
+Docs: [laravel-cf-workersai-docs.mdick85.workers.dev/docs](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/)
+
 What it does:
 
 - Text generation, embeddings, structured output, tool calls, streaming.
