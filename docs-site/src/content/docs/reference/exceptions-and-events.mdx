@@ -1,0 +1,50 @@
+---
+title: Exceptions and events
+description: Every class the package adds, with when it is thrown or dispatched.
+sidebar:
+  order: 3
+---
+
+## Exceptions
+
+All three exceptions are in the namespace `Meirdick\WorkersAi\Exceptions`. All extend `Laravel\Ai\Exceptions\AiException`.
+
+| Class | Thrown when | Failover | Fix |
+| --- | --- | --- | --- |
+| `EmptyResponseException` | A step returns no text and no tool calls, and `throw_on_empty_response` is on. | No | Raise the token cap or lower `reasoning_effort`. |
+| `TruncatedResponseException` | A step ends with finish reason `length`, and `throw_on_truncation` is on. | No | Raise the token cap. |
+| `GatewayTimeoutException` | The gateway returns HTTP 408. | Yes | Lower the token cap, lower `reasoning_effort`, or split the work. |
+
+`EmptyResponseException` names the model, the finish reason and the reasoning tokens. `TruncatedResponseException` names the model, the completion tokens and the requested cap.
+
+## Other exceptions you can see
+
+These come from Laravel AI or PHP, not from the package:
+
+| Class | Cause |
+| --- | --- |
+| `Laravel\Ai\Exceptions\AiException` | Config errors (missing token, bad `account_id`, bad `gateway`, both `url` and `account_id`), prefixed model on the direct API, Cloudflare error payloads, response without choices. |
+| `Laravel\Ai\Exceptions\RateLimitedException` | HTTP 429 after all attempts. |
+| `Laravel\Ai\Exceptions\ProviderOverloadedException` | HTTP 502, 503, 504, 520, 522 or 524 after all attempts. |
+| `Laravel\Ai\Exceptions\InsufficientCreditsException` | HTTP 402. |
+| `Laravel\Ai\Exceptions\ProviderConnectionException` | Network failure or timeout (`laravel/ai` 0.11 and later). |
+| `InvalidArgumentException` | `reasoning_effort` outside `low`, `medium`, `high`. Unsupported attachment type. Document attachment. |
+| `RuntimeException` | A provider tool was given. |
+
+## Event
+
+`Meirdick\WorkersAi\Events\WorkersAiUsageReported` is dispatched once per non-streamed model call that reports `usage.neurons`. See [Cost tracking](/guides/cost-tracking/).
+
+## Attribute
+
+`Meirdick\WorkersAi\Attributes\ReasoningEffort` is a class attribute. Constants: `LOW`, `MEDIUM`, `HIGH`. `ReasoningEffort::ALLOWED` lists the valid values.
+
+## Other classes
+
+| Class | Purpose |
+| --- | --- |
+| `Meirdick\WorkersAi\WorkersAiServiceProvider` | Registers the driver. Laravel package discovery loads it. |
+| `Meirdick\WorkersAi\WorkersAiKey` | Constants `PRIMARY` (`workers-ai`) and `ALIAS` (`workersai`). |
+| `Meirdick\WorkersAi\Providers\WorkersAiProvider` | The Laravel AI provider. |
+| `Meirdick\WorkersAi\Gateway\WorkersAiGateway` | The text and embedding gateway. |
+| `Meirdick\WorkersAi\Cloudflare\RetryPolicy` | Retry rules. Its public methods are `defaults()`, `shouldRetry()`, `backoffMilliseconds()` and `retryAfterMilliseconds()`. |

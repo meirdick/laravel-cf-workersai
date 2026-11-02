@@ -1,0 +1,61 @@
+---
+title: Cost tracking
+description: Record Cloudflare neurons per call with the WorkersAiUsageReported event or the raw response.
+sidebar:
+  order: 11
+---
+
+Cloudflare bills Workers AI in neurons, not tokens. Every endpoint shape returns a neuron count in `usage.neurons`. A cost model based on token counts alone gives the wrong number.
+
+The Laravel AI `Usage` and `Meta` objects have no field for neurons. The package gives you two ways to read them.
+
+## Listen for the event
+
+The package dispatches `Meirdick\WorkersAi\Events\WorkersAiUsageReported` once per model call. A tool loop with two steps dispatches two events.
+
+```php
+use Illuminate\Support\Facades\Event;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
+
+Event::listen(WorkersAiUsageReported::class, function (WorkersAiUsageReported $event) {
+    Spend::record($event->model, $event->neurons);
+});
+```
+
+The event has these public properties:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `provider` | `string` | The provider name from your config. |
+| `model` | `string` | The model name sent to Cloudflare. On `/compat` it has the `workers-ai/` prefix. |
+| `neurons` | `float` | The neuron count for this call. |
+| `promptTokens` | `int` | Uncached prompt tokens. |
+| `completionTokens` | `int` | Completion tokens. |
+| `reasoningTokens` | `int` | Reasoning tokens. |
+
+The package dispatches nothing when the response has no `neurons` field.
+
+<Aside type="caution" title="Streaming">
+  The package does not dispatch this event for streamed requests. For streams, read usage from the `StreamEnd` event.
+</Aside>
+
+## Read the raw response
+
+The HTTP response is on the Laravel AI response, and on each step of a tool loop:
+
+```php
+$response = agent('helper')->prompt('...', provider: 'workers-ai');
+
+$neurons = $response->raw?->json('usage.neurons');
+$latency = $response->raw?->transferStats?->getTransferTime();
+```
+
+This needs a `laravel/ai` version where `StepResponse` has `withRawResponse()`. On `laravel/ai` 0.9, `raw` is `null`. Use the event there.
+
+## Order of magnitude
+
+Reasoning costs neurons. On `@cf/openai/gpt-oss-120b`, one two-sentence prompt cost 9.6 neurons at `reasoning_effort: low` and 31.4 at `high`. A 16-token completion on `@cf/meta/llama-3.3-70b-instruct-fp8-fast` cost 4.48 neurons.
+
+## Pricing
+
+For the price per neuron and free allowance, see the [Cloudflare Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

@@ -1,0 +1,73 @@
+---
+title: Models
+description: Choose a Workers AI model, and learn what the maintainer measured for each model.
+sidebar:
+  order: 9
+---
+
+Workers AI hosts many open-weight models. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/). Model names are strings that you supply. The package does not check that a model exists.
+
+## Name prefixes
+
+| Prefix | Models |
+| --- | --- |
+| `@cf/meta/...` | Llama |
+| `@cf/openai/...` | OpenAI open-weight models |
+| `@cf/google/...` | Gemma |
+| `@cf/qwen/...`, `@cf/mistralai/...`, `@cf/microsoft/...` | Other vendors |
+| `@cf/baai/...` | Embedding models |
+
+Always write the bare name, such as `@cf/openai/gpt-oss-120b`. Do not write `workers-ai/` before it. The package adds it where needed.
+
+## Set the model
+
+There are four ways. Each later item beats the ones before it for that call:
+
+1. The package default or a `models.*` config key.
+2. `#[UseCheapestModel]` or `#[UseSmartestModel]` on the agent.
+3. `#[Model('@cf/...')]` on the agent.
+4. `model:` in the call.
+
+Set defaults in config:
+
+```php
+'workers-ai' => [
+    // ...
+    'models' => [
+        'text' => [
+            'default'  => '@cf/openai/gpt-oss-120b',
+            'cheapest' => '@cf/meta/llama-3.2-3b-instruct',
+            'smartest' => '@cf/moonshotai/kimi-k2.6',
+        ],
+        'embeddings' => [
+            'default'    => '@cf/baai/bge-large-en-v1.5',
+            'dimensions' => 1024,
+        ],
+    ],
+],
+```
+
+## What the maintainer measured
+
+These notes come from the package author's tests on one Workers AI account. They are not a promise. Model behavior changes. Test your own model.
+
+| Model | Notes |
+| --- | --- |
+| `@cf/openai/gpt-oss-120b` | Reasoning stays in proportion to the prompt. Obeys `reasoning_effort`. Calls tools. A safe default for agent work. |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Package default text model. Does not call tools on the `/v1` endpoint. Stops at 256 tokens with no cap. |
+| `@cf/meta/llama-4-scout-17b-16e-instruct` | Calls tools. |
+| `@cf/zai-org/glm-5.3-flash` | Good on short inputs. Treats `reasoning_effort` as on or off. Ignores `chat_template_kwargs.thinking`. Ran 8,190 tokens in 369 seconds with no cap. Always set a cap. |
+| `@cf/zai-org/glm-4.7-flash` | Returns `content` normally. Ignores `reasoning_effort`. Took about 29 seconds on a two-sentence question. |
+| `@cf/moonshotai/kimi-k2.6` | Package "smartest" model. Reads `chat_template_kwargs.thinking`. Structured calls with thinking off returned valid JSON in about 4 seconds. With thinking on, they broke the schema and passed the 60-second timeout. |
+| `@cf/meta/llama-3.2-3b-instruct` | Package "cheapest" model. |
+| `@cf/baai/bge-large-en-v1.5` | Package default embedding model. |
+
+## Model errors
+
+| Cloudflare response | Meaning |
+| --- | --- |
+| `410 Model has been deprecated` | Cloudflare retired the model. Pick another. |
+| `403 This account is not allowed to access` | Your plan does not include the model. `@cf/zai-org/glm-5.3` is not enabled on every account. |
+| `400 No such model` | You sent a `workers-ai/` prefixed name to the direct API. The package blocks this before the request. |
+
+`@cf/meta/llama-3.1-8b-instruct` is retired. It was the `#[UseCheapestModel]` default through version 0.6.1.

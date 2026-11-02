@@ -1,0 +1,81 @@
+---
+title: Testing
+description: Test code that uses the workers-ai provider with Laravel AI fakes and Http::fake.
+sidebar:
+  order: 12
+---
+
+You do not need Cloudflare credentials to test your own code. Use the Laravel AI fakes.
+
+## Fake an agent
+
+```php
+SupportAgent::fake(['Reset it from the login page.']);
+
+$response = (new SupportAgent)->prompt('How do I reset my password?');
+
+expect($response->text)->toBe('Reset it from the login page.');
+
+SupportAgent::assertPrompted('How do I reset my password?');
+```
+
+With no list of responses, the fake returns `Fake response for prompt: <prompt>`. You can pass a closure that receives the prompt.
+
+The fake replaces the gateway. No request reaches the package. Use it for your app logic.
+
+## Fake embeddings
+
+```php
+use Laravel\Ai\Embeddings;
+
+Embeddings::fake();
+
+// run your code, then:
+Embeddings::assertGenerated(fn ($prompt) => $prompt->inputs === ['hello']);
+```
+
+## Fake the HTTP layer
+
+To test with the real package code, fake the HTTP call. This checks the request body and the response handling.
+
+```php
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
+
+Http::fake([
+    'api.cloudflare.com/*' => Http::response([
+        'id' => 'chatcmpl-1',
+        'object' => 'chat.completion',
+        'model' => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+        'choices' => [[
+            'index' => 0,
+            'message' => ['role' => 'assistant', 'content' => 'Hello'],
+            'finish_reason' => 'stop',
+        ]],
+        'usage' => ['prompt_tokens' => 10, 'completion_tokens' => 2, 'neurons' => 1.5],
+    ]),
+]);
+
+$response = agent('helper')->prompt('Hi', provider: 'workers-ai');
+
+Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/chat/completions'));
+```
+
+Use `gateway.ai.cloudflare.com/*` as the URL pattern if your test config sets `gateway`.
+
+## Test the neuron event
+
+```php
+use Illuminate\Support\Facades\Event;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
+
+Event::fake([WorkersAiUsageReported::class]);
+
+// Http::fake(...) as above, then call the agent.
+
+Event::assertDispatched(WorkersAiUsageReported::class);
+```
+
+## Live tests
+
+The package repository has live tests that call Cloudflare. They are skipped unless you set `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT`. Set `WORKERS_AI_E2E_GATEWAY` for gateway tests, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep. You do not need them to use the package.

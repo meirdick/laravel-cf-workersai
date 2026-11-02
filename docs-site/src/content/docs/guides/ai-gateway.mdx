@@ -1,0 +1,127 @@
+---
+title: AI Gateway
+description: Route Workers AI requests through Cloudflare AI Gateway, including Authenticated Gateway, session affinity and cached tokens.
+sidebar:
+  order: 8
+---
+
+Cloudflare AI Gateway is a proxy for AI requests. It gives you request logs, cost analytics, caching and retries in the Cloudflare dashboard. You create and configure a gateway in the dashboard. The package only sends requests to it.
+
+## Route requests through a gateway
+
+Create a gateway in the Cloudflare dashboard. Copy its slug. Then set `gateway`:
+
+```env
+CLOUDFLARE_AI_GATEWAY=my-gateway
+```
+
+```php
+'workers-ai' => [
+    'driver'     => 'workers-ai',
+    'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+    'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+    'gateway'    => env('CLOUDFLARE_AI_GATEWAY'),
+],
+```
+
+Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`. The dashboard shows them under `compat`.
+
+Use only the slug. If you give a URL or a value with a slash, the package throws and tells you to use the `url` key.
+
+## Authenticated Gateway
+
+A gateway with Authenticated Gateway turned on needs a second token. Cloudflare reads it from the `cf-aig-authorization` header. Your Workers AI token still goes in `Authorization`.
+
+Set `gateway_token`:
+
+```php
+'workers-ai' => [
+    // ...
+    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+],
+```
+
+The package sends `cf-aig-authorization: Bearer <gateway_token>` on chat, streaming and embeddings. If you leave `gateway_token` empty, the package sends no header.
+
+Without the header, an authenticated gateway returns `{"code":10000,"message":"Authentication error"}`. This message does not name the gateway or the header.
+
+## Use the provider path
+
+To use `<gateway>/workers-ai/v1` instead of `/compat`, set `gateway_path`:
+
+```php
+'gateway_path' => 'workers-ai/v1',
+```
+
+On some gateways this path returns 401 for embeddings. See [How it works](/concepts/how-it-works/).
+
+## Use a custom URL
+
+Set `url` for a full URL, such as a `/compat` URL or a self-hosted gateway. Do not set `account_id` with it. The package throws if both are set.
+
+```php
+'workers-ai' => [
+    'driver' => 'workers-ai',
+    'key'    => env('CLOUDFLARE_AI_API_TOKEN'),
+    'url'    => env('CLOUDFLARE_AI_URL'),
+],
+```
+
+If the URL ends in `/compat`, the package adds the `workers-ai/` model prefix. For any other URL, it sends the bare model name.
+
+## Session affinity
+
+Set `session_affinity` to send the `x-session-affinity` header on every request:
+
+```php
+'workers-ai' => [
+    // ...
+    'session_affinity' => 'my-app-session',
+],
+```
+
+Related requests then reach the same cache shard. This helps the model prefix cache. See the next section.
+
+## Cached tokens
+
+Some models cache the start of a prompt. Cloudflare reports the cached count in `usage.prompt_tokens_details.cached_tokens`.
+
+The package maps the counts like this:
+
+- `Usage::$cacheReadInputTokens` is the cached count.
+- `Usage::$promptTokens` is the uncached count.
+- The two add up to the `prompt_tokens` that Cloudflare reports.
+
+The maintainer measured two identical calls on `@cf/zai-org/glm-5.3-flash` under one `x-session-affinity` value on 2026-09-16:
+
+| Call | Wire `prompt_tokens` | Wire `cached_tokens` | `promptTokens` | `cacheReadInputTokens` | Neurons |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 1221 | 0 | 1221 | 0 | 17.8 |
+| 2 | 1221 | 1216 | 5 | 1216 | 8.3 |
+
+The cache depends on the model. `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache in tests. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
+
+<Aside type="note">
+  This model prefix cache is separate from AI Gateway response caching. The package has no setting for gateway response caching. Set that in the dashboard.
+</Aside>
+
+`#[CacheInstructions]` from Laravel AI has no effect on this provider.
+
+## Custom headers
+
+The package sends the `headers` array from the provider config. A configured header replaces a package header with the same name. Names match without regard to case.
+
+```php
+'workers-ai' => [
+    // ...
+    'headers' => ['X-Trace-Id' => env('TRACE_ID')],
+],
+```
+
+## Logging
+
+AI Gateway logs are in the Cloudflare dashboard. The package does not write request logs. It writes one warning to the Laravel log when it raises the token cap for a `thinking` request.
+
+## Gateway retries
+
+An AI Gateway with `retry_max_attempts` set retries inside your single HTTP request. A late error can make the request several times longer, and your own timeout can cut it. Use one retry layer. If you use the gateway retry, set `retry` to `false` in the package config. See [Errors and retries](/guides/errors-and-retries/).

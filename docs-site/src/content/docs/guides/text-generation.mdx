@@ -1,0 +1,130 @@
+---
+title: Text generation
+description: Send prompts to Workers AI models with Laravel AI agents, and control the model, token cap and timeout.
+sidebar:
+  order: 1
+---
+
+## Prompt an agent
+
+Use the `agent()` helper for a quick call:
+
+```php
+use function Laravel\Ai\agent;
+
+$response = agent('You are a helpful assistant.')
+    ->prompt('Name three uses for a paperclip.', provider: 'workers-ai');
+
+echo $response->text;
+```
+
+For an agent class, implement `Laravel\Ai\Contracts\Agent` and use the `Promptable` trait. Add `#[Provider('workers-ai')]` to pin the provider.
+
+```php
+use Laravel\Ai\Attributes\Provider;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Promptable;
+
+#[Provider('workers-ai')]
+class SupportAgent implements Agent
+{
+    use Promptable;
+
+    public function instructions(): string
+    {
+        return 'You answer support questions in two sentences.';
+    }
+}
+
+$response = (new SupportAgent)->prompt('How do I reset my password?');
+```
+
+## Choose a model
+
+The package uses these models when you do not name one:
+
+| Role | Default model | Config key |
+| --- | --- | --- |
+| Default | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `models.text.default` |
+| `#[UseCheapestModel]` | `@cf/meta/llama-3.2-3b-instruct` | `models.text.cheapest` |
+| `#[UseSmartestModel]` | `@cf/moonshotai/kimi-k2.6` | `models.text.smartest` |
+
+Pass a model per call with `model:`. Or set one in the agent with `#[Model('@cf/...')]`. Or change the defaults in config. See [Models](/guides/models/).
+
+## Set the token cap
+
+Cloudflare stops a completion at 256 tokens when the request has no cap. The package sends `max_completion_tokens: 4096` by default.
+
+Change the default for all agents with `default_max_tokens`:
+
+```php
+'workers-ai' => [
+    // ...
+    'default_max_tokens' => 2048,
+],
+```
+
+Set it to `null` to send no cap. Do this only if you know the model. One tested model ran to 8,190 tokens in 369 seconds with no cap.
+
+Set a cap for one agent with `#[MaxTokens]`:
+
+```php
+use Laravel\Ai\Attributes\MaxTokens;
+
+#[MaxTokens(500)]
+class ShortAnswerAgent implements Agent { /* ... */ }
+```
+
+The order of precedence is: the per-call or per-agent value, then `default_max_tokens`, then the Cloudflare default.
+
+## Set the timeout
+
+Laravel AI uses a 60-second timeout. Some Workers AI requests take longer. This includes large models, structured output and reasoning models. Raise the timeout:
+
+```php
+use Laravel\Ai\Attributes\Timeout;
+
+#[Timeout(120)]
+class ExtractionAgent implements Agent { /* ... */ }
+
+// or per call:
+$agent->prompt('...', provider: 'workers-ai', timeout: 120);
+```
+
+A request that passes the timeout fails after one attempt. The package does not retry it. See [Errors and retries](/guides/errors-and-retries/).
+
+## Temperature and top-p
+
+The package sends `temperature` and `top_p` when Laravel AI sets them. Use `#[Temperature]` and `#[TopP]` on the agent.
+
+## Send extra request fields
+
+An agent that implements `Laravel\Ai\Contracts\HasProviderOptions` can add fields to the request body. The package merges the array into the body.
+
+```php
+use Laravel\Ai\Contracts\HasProviderOptions;
+use Laravel\Ai\Enums\Lab;
+
+class MyAgent implements Agent, HasProviderOptions
+{
+    use Promptable;
+
+    public function instructions(): string
+    {
+        return 'You are a helpful assistant.';
+    }
+
+    public function providerOptions(Lab|string $provider): array
+    {
+        return $provider === 'workers-ai'
+            ? ['seed' => 42]
+            : [];
+    }
+}
+```
+
+`$provider` is a string for this package, not a `Lab` case. Compare it with the name you registered. The package does not check the fields. Make sure your model accepts them.
+
+<Aside type="note">
+  Keys from `providerOptions()` override keys the package builds, such as `reasoning_effort`. The `session_affinity` key is removed from the body.
+</Aside>

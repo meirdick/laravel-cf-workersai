@@ -1,0 +1,107 @@
+---
+title: Configuration
+description: Every provider config key, with type, default and example.
+sidebar:
+  order: 1
+---
+
+Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name is your choice. The `driver` value must be `workers-ai` or `workersai`.
+
+## Full example
+
+```php
+'providers' => [
+    'workers-ai' => [
+        'driver'     => 'workers-ai',
+        'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+        'gateway'    => env('CLOUDFLARE_AI_GATEWAY'),
+
+        'default_max_tokens'        => 4096,
+        'reasoning_effort'          => 'low',
+        'throw_on_empty_response'   => true,
+        'throw_on_truncation'       => false,
+        'structured_output_retries' => 2,
+        'retry'                     => true,
+        'retry_attempts'            => 3,
+        'retry_rate_limited'        => true,
+
+        'models' => [
+            'text' => [
+                'default'  => '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+                'cheapest' => '@cf/meta/llama-3.2-3b-instruct',
+                'smartest' => '@cf/moonshotai/kimi-k2.6',
+            ],
+            'embeddings' => [
+                'default'    => '@cf/baai/bge-large-en-v1.5',
+                'dimensions' => 1024,
+            ],
+        ],
+    ],
+],
+```
+
+## Connection
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `driver` | string | none | Required. `workers-ai` or `workersai`. |
+| `key` | string | none | Required. Cloudflare API token with the `Workers AI: Read` permission. The old name `api_key` still works. If both are set, `key` wins. |
+| `account_id` | string | none | Cloudflare account ID. Required unless you set `url`. A 32-character hex string. Not a URL. |
+| `gateway` | string | none | AI Gateway slug. Sends requests through the gateway. |
+| `gateway_path` | string | `compat` | Path after the gateway slug. Set `workers-ai/v1` for the provider path. Used only with `gateway`. |
+| `gateway_token` | string | none | Token for an AI Gateway with Authenticated Gateway on. Sent as `cf-aig-authorization: Bearer <token>`. |
+| `url` | string | none | Full endpoint URL. Do not set it with `account_id`. The package throws if both are set. |
+| `session_affinity` | string | none | Value for the `x-session-affinity` header. |
+| `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. |
+
+The package resolves the endpoint in this order: `url`, then `account_id` with `gateway`, then `account_id` alone. See [How it works](/concepts/how-it-works/).
+
+## Generation
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `default_max_tokens` | int or null | `4096` | Sent as `max_completion_tokens` when the call or agent sets no cap. `null` sends no cap. |
+| `reasoning_effort` | string or null | `null` | `low`, `medium` or `high`. Other values throw `InvalidArgumentException`. |
+| `structured_output_retries` | int | `2` | Times the package re-asks for schema-valid output. `0` turns it off. |
+| `models.text.default` | string | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | Default text model. |
+| `models.text.cheapest` | string | `@cf/meta/llama-3.2-3b-instruct` | Model for `#[UseCheapestModel]`. |
+| `models.text.smartest` | string | `@cf/moonshotai/kimi-k2.6` | Model for `#[UseSmartestModel]`. |
+| `models.embeddings.default` | string | `@cf/baai/bge-large-en-v1.5` | Default embedding model. |
+| `models.embeddings.dimensions` | int | `1024` | Dimensions reported to Laravel AI. Not sent to Cloudflare. |
+
+## Failure handling
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `throw_on_empty_response` | bool | `true` | Throw `EmptyResponseException` when a step has no text and no tool calls. |
+| `throw_on_truncation` | bool | `false` | Throw `TruncatedResponseException` when a step ends with finish reason `length`. |
+| `retry` | bool | `true` | `false` turns off all retrying. |
+| `retry_attempts` | int | `3` | Total attempts, including the first. |
+| `retry_rate_limited` | bool | `true` | `false` makes an HTTP 429 fail at once. |
+
+## Environment variables
+
+The package reads no environment variables by itself. The names below are the ones used in the examples. Your `config/ai.php` reads them with `env()`.
+
+| Variable | Used for |
+| --- | --- |
+| `CLOUDFLARE_AI_API_TOKEN` | `key` |
+| `CLOUDFLARE_ACCOUNT_ID` | `account_id` |
+| `CLOUDFLARE_AI_GATEWAY` | `gateway` |
+| `CLOUDFLARE_AI_GATEWAY_TOKEN` | `gateway_token` |
+| `CLOUDFLARE_AI_URL` | `url` |
+
+## Per-agent settings
+
+| Setting | Where | Description |
+| --- | --- | --- |
+| `#[ReasoningEffort(ReasoningEffort::LOW)]` | Agent class | Sets `reasoning_effort` for this agent. Beats the config value. |
+| `#[MaxTokens(n)]` | Agent class | Sets the token cap. Beats `default_max_tokens`. |
+| `#[Timeout(n)]` | Agent class | Sets the request timeout in seconds. |
+| `#[Strict]` | Agent class | Sends `strict: true` with the JSON schema. |
+| `providerOptions()` | Agent method | Adds fields to the request body. Beats the package fields. |
+
+## Provider names
+
+The service provider registers two driver names, both for the same driver: `workers-ai` and `workersai`.

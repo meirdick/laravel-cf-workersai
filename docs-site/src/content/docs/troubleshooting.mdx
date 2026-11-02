@@ -1,0 +1,162 @@
+---
+title: Troubleshooting
+description: Common errors from the Workers AI provider, with causes and fixes.
+sidebar:
+  order: 80
+---
+
+## Setup errors
+
+### Workers AI requires an API token
+
+**Cause.** `key` is empty or not a string.
+**Fix.** Set `key` in your provider config, for example `env('CLOUDFLARE_AI_API_TOKEN')`. Use a token with the `Workers AI: Read` permission.
+
+### Workers AI requires an `account_id` or explicit `url`
+
+**Cause.** The config has neither `account_id` nor `url`.
+**Fix.** Set `CLOUDFLARE_ACCOUNT_ID`, or set `url`.
+
+### Workers AI config has both url and account_id set
+
+**Cause.** The package cannot pick between them.
+**Fix.** Remove one. Use `url` for full control, or `account_id` with an optional `gateway`.
+
+### account_id looks like a URL, or gateway looks malformed
+
+**Cause.** You pasted a URL or a path in the field.
+**Fix.** Use only the 32-character account ID. Use only the gateway slug.
+
+### Undefined array key "driver"
+
+**Cause.** The provider entry in `config/ai.php` has no `driver` value.
+**Fix.** Add `'driver' => 'workers-ai'` to the entry.
+
+### Authentication error with code 10000
+
+**Cause.** One of these:
+
+- The API token is wrong or lacks `Workers AI: Read`.
+- Your AI Gateway has Authenticated Gateway on, and you did not set `gateway_token`.
+- You use the gateway provider path `workers-ai/v1` for embeddings on a gateway with Authenticated Gateway on.
+
+**Fix.** Check the token. Set `gateway_token`. Remove `gateway_path` to use `/compat`.
+
+## Model errors
+
+### The model has the workers-ai/ prefix, but the endpoint expects bare model IDs
+
+**Cause.** You wrote `workers-ai/@cf/...` and the endpoint is the direct API or the provider path.
+**Fix.** Drop the prefix. Write `@cf/...`.
+
+### 410 Model has been deprecated
+
+**Cause.** Cloudflare retired the model.
+**Fix.** Pick another model. `@cf/meta/llama-3.1-8b-instruct` is retired.
+
+### 403 This account is not allowed to access
+
+**Cause.** Your account or plan does not include the model.
+**Fix.** Use a model your account can use.
+
+## Answer problems
+
+### EmptyResponseException
+
+**Cause.** The model returned HTTP 200 with no text and no tool calls. Usually a reasoning model used its whole token cap on thinking.
+**Fix.** Raise the token cap with `#[MaxTokens]` or `default_max_tokens`. Lower `reasoning_effort`. Raise `#[Timeout]` if you raise the cap.
+
+### TruncatedResponseException
+
+**Cause.** The answer reached the token cap, and `throw_on_truncation` is on.
+**Fix.** Raise the token cap. Lower `reasoning_effort`, so less of the cap goes to thinking.
+
+### The answer stops at about 256 tokens
+
+**Cause.** The request had no token cap and Cloudflare used its default.
+**Fix.** Do not set `default_max_tokens` to `null`. Leave the 4096 default, or set a number.
+
+### The answer is empty, and no exception is thrown
+
+**Cause.** `throw_on_empty_response` is `false`.
+**Fix.** Set it to `true`, or check `$response->text` yourself.
+
+### The model describes the tool in text and does not call it
+
+**Cause.** The model does not call tools, or chose not to. The default model does not call tools on the `/v1` endpoint.
+**Fix.** Use a model that calls tools, such as `@cf/openai/gpt-oss-120b`. To force a call, return `['tool_choice' => 'required']` from `providerOptions()`.
+
+### Structured output is missing fields
+
+**Cause.** Workers AI JSON mode is best-effort. The package re-asks up to 2 times by default.
+**Fix.** Add `#[Strict]`. Raise `structured_output_retries`. Lower `reasoning_effort`. Raise the token cap.
+
+### reasoning_effort must be one of: low, medium, high
+
+**Cause.** You used `none`, `minimal` or another value.
+**Fix.** Use `low`, `medium` or `high`.
+
+## Timeouts and rate limits
+
+### Connection timeout after 60 seconds
+
+**Cause.** The request ran longer than the Laravel AI timeout. The package does not retry this.
+**Fix.** Raise `#[Timeout]`. Lower the token cap or `reasoning_effort`.
+
+### GatewayTimeoutException (HTTP 408)
+
+**Cause.** The generation ran longer than the gateway waits. This is not a client timeout.
+**Fix.** Lower the token cap. Lower `reasoning_effort`. Split the work. Configure a failover provider.
+
+### RateLimitedException (HTTP 429)
+
+**Cause.** You sent more requests than your account or model allows. The package already retried.
+**Fix.** Limit your concurrency. Raise `retry_attempts` if the limit is brief.
+
+### ProviderOverloadedException
+
+**Cause.** Cloudflare returned 502, 503, 504, 520, 522 or 524 on every attempt.
+**Fix.** Try again later. Configure a failover provider.
+
+### A request takes much longer than the timeout
+
+**Cause.** Your AI Gateway retries inside the request, and the package retries too.
+**Fix.** Use one retry layer. See [Errors and retries](/guides/errors-and-retries/).
+
+## Attachment errors
+
+### Workers AI does not support document attachments
+
+**Cause.** You attached a non-image file.
+**Fix.** Attach images only. Or extract the document text and put it in the prompt.
+
+### Unsupported attachment type
+
+**Cause.** The attachment is not a Laravel AI `File` or an uploaded file.
+**Fix.** Create the attachment with `Image::fromPath()`, `Image::fromUrl()` or a similar method.
+
+## Cost shows as zero
+
+**Cause.** You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, or on a streamed call.
+**Fix.** Listen for `WorkersAiUsageReported`. It covers non-streamed calls.
+
+## Upgrade errors
+
+### composer cannot resolve laravel/ai
+
+**Cause.** Your project requires `laravel/ai` `^0.7` or `^0.8`. Current versions need `^0.9` or later.
+**Fix.** Bump both packages in one command:
+
+```bash
+composer require "laravel/ai:^0.11" "meirdick/laravel-cf-workersai:^0.7" -W
+```
+
+### table agent_conversations has no column named participant_type
+
+**Cause.** The `laravel/ai` database schema changed between 0.9 and 0.11. The cause is not this package.
+**Fix.** Publish the `laravel/ai` migrations again, or reconcile them.
+
+### Your composer.json says PHP 8.2
+
+**Cause.** This package needs PHP 8.3. Composer checks the PHP you run, not your declared minimum.
+**Fix.** Set your own `php` constraint to `^8.3`.

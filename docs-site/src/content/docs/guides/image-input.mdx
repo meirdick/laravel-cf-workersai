@@ -1,0 +1,41 @@
+---
+title: Image input
+description: Send images to Workers AI vision models, and learn which attachment types work.
+sidebar:
+  order: 6
+---
+
+You can attach images to a prompt. The package sends each image as an `image_url` content part. Use a Workers AI model that accepts images.
+
+```php
+use Laravel\Ai\Files\Image;
+
+$response = agent('Describe images.')->prompt(
+    'What is in this picture?',
+    attachments: [Image::fromPath(storage_path('app/photo.jpg'))],
+    provider: 'workers-ai',
+    model: '<a vision model from the Cloudflare catalog>',
+);
+```
+
+## Supported attachments
+
+| Laravel AI class | Created with | Sent as |
+| --- | --- | --- |
+| `LocalImage` | `Image::fromPath()` | Base64 data URL |
+| `StoredImage` | `Image::fromStorage()` | Base64 data URL |
+| `Base64Image` | `Image::fromBase64()` | Base64 data URL |
+| `RemoteImage` | `Image::fromUrl()` | The URL |
+| Uploaded file | `Image::fromUpload()` or an `UploadedFile` | Base64 data URL |
+
+An uploaded file must have one of these MIME types: `image/jpeg`, `image/png`, `image/gif` or `image/webp`. Other types (SVG, AVIF, HEIC) are rejected.
+
+## Not supported
+
+- Documents. The package throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
+- Audio and video.
+- Image generation.
+
+<Aside type="note">
+  The package does not check that the model accepts images. Pick the model from the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
+</Aside>

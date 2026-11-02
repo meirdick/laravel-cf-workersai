@@ -1,0 +1,106 @@
+---
+title: Quickstart
+description: Install the package, set your Cloudflare credentials and make a first text request.
+sidebar:
+  order: 1
+---
+
+This page takes you from nothing to a working request. It needs about five minutes.
+
+## Before you start
+
+You need:
+
+- A Laravel app with `laravel/ai` installed. See the Laravel AI documentation.
+- PHP 8.3 or later.
+- A Cloudflare account.
+
+## Install and configure
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    composer require meirdick/laravel-cf-workersai
+    ```
+
+    Laravel package discovery registers the service provider. You do not publish anything.
+  </Step>
+  <Step title="Find your account ID">
+    Open the Cloudflare dashboard. The account ID is the 32-character string in the dashboard URL after `/accounts/`. Do not paste a full URL.
+  </Step>
+  <Step title="Create an API token">
+    In the Cloudflare dashboard, create an API token with the `Workers AI: Read` permission. Copy the token. Cloudflare shows it once.
+  </Step>
+  <Step title="Set environment variables">
+    ```env
+    CLOUDFLARE_ACCOUNT_ID=your-account-id
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    ```
+  </Step>
+  <Step title="Add the provider to config/ai.php">
+    ```php
+    'providers' => [
+        'workers-ai' => [
+            'driver'     => 'workers-ai',
+            'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+            'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+        ],
+    ],
+    ```
+
+    The `driver` value must be `workers-ai` (or the alias `workersai`).
+  </Step>
+</Steps>
+
+<Aside type="caution" title="Keep tokens out of git">
+  Put the token in `.env`. Do not commit it. Do not put it in `config/ai.php` as plain text.
+</Aside>
+
+## Make a first request
+
+```php
+use function Laravel\Ai\agent;
+
+$response = agent('helper')->prompt('Say hi.', provider: 'workers-ai');
+
+echo $response->text;
+```
+
+Without a `model:` argument, the package uses `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
+
+Pass any Workers AI model with `model:`:
+
+```php
+$response = agent('helper')->prompt(
+    'Summarize this in one sentence.',
+    provider: 'workers-ai',
+    model: '@cf/openai/gpt-oss-120b',
+);
+```
+
+## Make Workers AI the default provider
+
+Set the default in `config/ai.php`:
+
+```php
+'default' => 'workers-ai',
+```
+
+Then you can omit `provider:`.
+
+## Check that it works
+
+The call returns text in `$response->text`. If it fails, see [Troubleshooting](/troubleshooting/).
+
+Common first errors:
+
+| Message starts with | Cause |
+| --- | --- |
+| `Workers AI requires an API token` | `key` is empty. Check `CLOUDFLARE_AI_API_TOKEN`. |
+| `Workers AI requires an account_id or explicit url` | `account_id` is empty. Check `CLOUDFLARE_ACCOUNT_ID`. |
+
+## Next steps
+
+- Route requests through AI Gateway. See [AI Gateway](/guides/ai-gateway/).
+- Pick a model. See [Models](/guides/models/).
+- Set `reasoning_effort`. See [Reasoning models](/guides/reasoning/).

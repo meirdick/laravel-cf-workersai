@@ -1,0 +1,68 @@
+---
+title: How it works
+description: How Workers AI, AI Gateway and Laravel AI fit together, and how the package chooses an endpoint.
+---
+
+## The three parts
+
+**Workers AI** is the Cloudflare service that runs open-weight models. You call it over HTTP. Cloudflare bills it in neurons.
+
+**AI Gateway** is an optional Cloudflare proxy. It sits between your app and Workers AI. It gives you request logs, cost analytics, caching and retries. You set it up in the Cloudflare dashboard. This package does not configure it.
+
+**Laravel AI** (`laravel/ai`) is the Laravel package that gives you `agent()`, `Embeddings`, tools and streaming. It sends each request through a provider.
+
+This package is a Laravel AI provider. It turns Laravel AI calls into Workers AI requests.
+
+## How it plugs into Laravel AI
+
+The package registers a driver in the Laravel AI manager. It registers two names for the same driver:
+
+| Name | Use |
+| --- | --- |
+| `workers-ai` | Primary name. |
+| `workersai` | Alias. |
+
+The provider has two gateways, both backed by one class: a text gateway and an embedding gateway. The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as in any other provider.
+
+Anything you do with Laravel AI works on this provider. This includes `#[MaxTokens]`, `#[Timeout]`, `#[Provider]` and `Ai::fakeAgent()`.
+
+## Endpoint shapes
+
+The package picks an endpoint from your config. It checks the keys in this order:
+
+1. `url` is set. All requests go to that URL.
+2. `account_id` and `gateway` are set. Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`.
+3. `account_id` is set. Requests go to `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1`.
+
+If you set both `url` and `account_id`, the package throws. Pick one.
+
+### Why the gateway uses `/compat`
+
+AI Gateway exposes Workers AI on two paths:
+
+| Path | Chat | Embeddings | Model name |
+| --- | --- | --- | --- |
+| `<gateway>/compat` | works | works | `workers-ai/@cf/...` or bare `@cf/...` |
+| `<gateway>/workers-ai/v1` | works | works, or returns 401 | bare `@cf/...` |
+| Direct API | works | works | bare `@cf/...` |
+
+The maintainer measured this on 2026-09-09. On a gateway with Authenticated Gateway turned on, the provider path `workers-ai/v1` returned 401 for embeddings. Chat on the same gateway worked. The `/compat` path worked on every gateway tested. So the package uses `/compat` by default.
+
+To use the provider path, set `gateway_path` to `workers-ai/v1`.
+
+### Model name prefix
+
+The `/compat` path routes on a `workers-ai/` prefix. You do not write it. Write bare names such as `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The package adds the prefix on `/compat` and sends the bare name on other endpoints.
+
+If you give a prefixed name to the direct API, the package throws. The direct API returns `400 No such model` for it.
+
+## What the package adds
+
+The package handles several Workers AI behaviors that Laravel AI does not:
+
+- Cloudflare stops most models at 256 tokens if the request has no cap. The package sends 4096 by default.
+- A reasoning model can return HTTP 200 with no text. The package throws `EmptyResponseException`.
+- Laravel AI does not send `reasoning_effort`. The package does.
+- Cloudflare bills in neurons. The package dispatches an event with the figure.
+- The package retries HTTP 429, 502, 503, 504, 520, 522 and 524.
+- Workers AI returns reasoning text under different keys by model. The package reads all of them.

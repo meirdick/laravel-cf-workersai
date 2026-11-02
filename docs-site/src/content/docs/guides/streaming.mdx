@@ -1,0 +1,40 @@
+---
+title: Streaming
+description: Stream text and reasoning events from Workers AI.
+sidebar:
+  order: 2
+---
+
+Call `stream()` on an agent. Loop over the events.
+
+```php
+use Laravel\Ai\Streaming\Events\TextDelta;
+
+foreach (agent('helper')->stream('Tell me a story.', provider: 'workers-ai') as $event) {
+    if ($event instanceof TextDelta) {
+        echo $event->delta;
+    }
+}
+```
+
+## Reasoning events
+
+A reasoning model sends `ReasoningStart`, `ReasoningDelta` and `ReasoningEnd` events before the text events. Both classes are in `Laravel\Ai\Streaming\Events`.
+
+Models send reasoning text under different keys. The package reads `reasoning_content`, `reasoning` and `thinking` on the stream. You do not handle this.
+
+## Usage on streams
+
+The package asks Cloudflare for usage data on the stream. It adds the usage across tool-call steps. Cloudflare can send a final usage chunk with all zeros. The package does not let that chunk overwrite real figures.
+
+## Stream and tools
+
+Streaming works with tool calls. The package collects partial tool-call fragments and gives the complete call to Laravel AI. See [Tools](/guides/tools/).
+
+## Stream errors
+
+On `laravel/ai` 0.11 and later, a stream that ends on an error event throws `StreamErrorException`. On 0.9 and 0.10, the run ends without an exception.
+
+## Neuron events on streams
+
+The `WorkersAiUsageReported` event is not sent for streamed requests. The `StreamEnd` event carries the summed usage. See [Cost tracking](/guides/cost-tracking/).

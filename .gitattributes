@@ -8,3 +8,4 @@
 /phpunit.xml       export-ignore
 /CHANGELOG.md      export-ignore
 /.wrangler         export-ignore
+/docs-site         export-ignore

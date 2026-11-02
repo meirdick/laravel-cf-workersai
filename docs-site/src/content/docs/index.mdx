@@ -1,0 +1,84 @@
+---
+title: Overview
+description: What laravel-cf-workersai does, who should use it, and what it does not do.
+sidebar:
+  order: 0
+---
+
+laravel-cf-workersai is a Composer package. It adds Cloudflare Workers AI as a provider for [Laravel AI](https://github.com/laravel/ai) (`laravel/ai`). It can send requests through Cloudflare AI Gateway.
+
+You write the same Laravel AI code as for any other provider. You change the provider name to `workers-ai`.
+
+```php
+use function Laravel\Ai\agent;
+
+$response = agent('helper')->prompt('Say hi.', provider: 'workers-ai');
+echo $response->text;
+```
+
+## What it does
+
+- Text generation, streaming, tool calls and structured output.
+- Embeddings.
+- Image input for vision models.
+- Three endpoint shapes: the direct Workers AI API, an AI Gateway, or a custom URL.
+- A default token cap, so Cloudflare does not cut answers at 256 tokens.
+- An exception when the model returns no answer.
+- A `reasoning_effort` setting for reasoning models.
+- Retries for transient failures and rate limits.
+- An event with the Cloudflare `neurons` billing figure.
+
+## What it does not do
+
+- It does not generate images, audio or transcriptions. The provider supports text and embeddings only.
+- It does not accept document attachments. Only images.
+- It does not support Laravel AI provider tools, such as web search. It throws on them.
+- It does not check that a model name exists.
+- It does not limit your request concurrency.
+- It does not configure your AI Gateway. You do that in the Cloudflare dashboard.
+
+## Who should use it
+
+Use this package if you want to run open-weight models on Cloudflare from a Laravel app. Cloudflare bills Workers AI by usage, in neurons. Workers AI hosts models from Meta, OpenAI, Moonshot and others. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
+
+Laravel AI already has an `openai-compatible` driver. You can point it at the Cloudflare `/compat` URL. If you use one model for text and set `#[MaxTokens]` on every agent, that driver can be enough.
+
+Use this package when you need one or more of these:
+
+- A default token cap. Without a cap, Cloudflare stops most models at 256 tokens.
+- An exception when a reasoning model spends its whole budget on thinking and returns nothing.
+- `reasoning_effort` control.
+- Neuron figures for cost tracking.
+- Automatic retry of HTTP 429 and of Cloudflare edge errors.
+- Support for an AI Gateway with Authenticated Gateway turned on.
+
+See [How it works](/concepts/how-it-works/) for details.
+
+## Requirements
+
+| Item | Version |
+| --- | --- |
+| PHP | `^8.3` |
+| `laravel/ai` | `^0.9`, `^0.10`, `^0.11` or `^1.0` |
+| Package | `meirdick/laravel-cf-workersai` |
+
+For `laravel/ai` `^0.7` or `^0.8`, use package version `^0.5`.
+
+Support for `laravel/ai` `^1.0` is on the `main` branch. Install it with `"meirdick/laravel-cf-workersai": "1.0.x-dev"`. The package tags 1.0.0 when `laravel/ai` tags 1.0. See the [changelog](/changelog/).
+
+## Next steps
+
+<CardGrid>
+  <Card title="Quickstart" href="/quickstart/">
+    Install the package and make a first call.
+  </Card>
+  <Card title="How it works" href="/concepts/how-it-works/">
+    Workers AI, AI Gateway and Laravel AI.
+  </Card>
+  <Card title="Configuration" href="/reference/configuration/">
+    Every config key, with defaults.
+  </Card>
+  <Card title="Troubleshooting" href="/troubleshooting/">
+    Errors, causes and fixes.
+  </Card>
+</CardGrid>

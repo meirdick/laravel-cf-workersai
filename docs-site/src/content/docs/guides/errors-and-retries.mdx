@@ -1,0 +1,80 @@
+---
+title: Errors and retries
+description: How the package retries failed requests, which exceptions it throws, and how to use failover.
+sidebar:
+  order: 10
+---
+
+## What the package retries
+
+The package retries a request when it fails in a way that can pass on a second try. The default is 3 attempts in total, including the first.
+
+| Failure | Retried | Result after the last attempt |
+| --- | --- | --- |
+| Connect-phase network error (cURL 6, 7, 56, or a connect timeout) | Yes | `ProviderConnectionException` |
+| Timeout during transfer (cURL 28 mid-request) | No | `ProviderConnectionException` on `laravel/ai` 0.11 and later. Illuminate `ConnectionException` on 0.9 and 0.10. |
+| HTTP 402 | No | `InsufficientCreditsException` |
+| HTTP 408 | No | `GatewayTimeoutException` |
+| HTTP 429 | Yes, with backoff | `RateLimitedException` |
+| HTTP 502, 503, 504 | Yes | `ProviderOverloadedException` |
+| HTTP 520, 522, 524 | Yes | `ProviderOverloadedException` |
+| HTTP 200 with no text and no tool calls | Not applicable | `EmptyResponseException` |
+| HTTP 200 and finish reason `length` | Not applicable | `TruncatedResponseException`, only if `throw_on_truncation` is on |
+
+Backoff is 500 ms, 1 s, 2 s and so on, up to 20 s. If the response has a `Retry-After` header, the package waits that long, up to 20 s. It reads both seconds and HTTP-date values.
+
+## Retry settings
+
+```php
+'workers-ai' => [
+    // ...
+    'retry'              => true,  // false turns all retrying off
+    'retry_attempts'     => 3,     // total attempts, including the first
+    'retry_rate_limited' => true,  // false makes a 429 fail at once
+],
+```
+
+## Why a timeout is not retried
+
+A request that hits your client timeout has run for the whole timeout. A retry runs for just as long. Three attempts would turn a 60-second timeout into about 3 minutes. Raise `#[Timeout]` instead. See [Text generation](/guides/text-generation/).
+
+## HTTP 408
+
+A 408 from the gateway is not a client timeout. It means the request reached Cloudflare and the generation ran longer than the gateway waits. The maintainer saw `@cf/zai-org/glm-5.3-flash` with a 24,000 token cap return 408 after 709 seconds.
+
+The package throws `GatewayTimeoutException`. It does not retry, because the retry takes as long. To fix it, lower the token cap, lower `reasoning_effort`, or split the work.
+
+## HTTP 429
+
+Laravel AI does not retry a 429. This package does. In a wide fan-out, one 429 would otherwise be one lost request.
+
+The package does not limit your concurrency. Limits depend on the account and the model. Limit the fan-out in your own code.
+
+## Failover
+
+These exceptions implement the Laravel AI `FailoverableException` marker: `GatewayTimeoutException`, `RateLimitedException`, `ProviderOverloadedException`, `InsufficientCreditsException` and the connection exceptions. If you configure a fallback provider in Laravel AI, it takes over when one of them is thrown.
+
+These do not trigger failover: `EmptyResponseException` and `TruncatedResponseException`. Catch them in your code. Both extend `Laravel\Ai\Exceptions\AiException`.
+
+```php
+use Laravel\Ai\Exceptions\AiException;
+use Meirdick\WorkersAi\Exceptions\EmptyResponseException;
+
+try {
+    $response = $agent->prompt('...', provider: 'workers-ai');
+} catch (EmptyResponseException $e) {
+    // Raise the token cap, or lower reasoning_effort, and try again.
+} catch (AiException $e) {
+    // Any other Laravel AI failure.
+}
+```
+
+## Error messages from Cloudflare
+
+Cloudflare uses two error shapes: `{"error": {...}}` and `{"errors": [...]}`. The package reads both. It throws `AiException` with a message in this form: `Workers AI Error: [type] message`.
+
+If a response has no `choices`, the package throws `AiException` with `Workers AI Error: Response did not contain any choices.`
+
+## Gateway retry
+
+If your AI Gateway also retries, the two layers multiply. Use one. If you use the gateway retry, set `retry` to `false`.

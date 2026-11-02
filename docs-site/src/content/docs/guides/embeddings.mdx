@@ -1,0 +1,42 @@
+---
+title: Embeddings
+description: Create embeddings with Workers AI models through Laravel AI.
+sidebar:
+  order: 5
+---
+
+Use the `Embeddings` class from Laravel AI:
+
+```php
+use Laravel\Ai\Embeddings;
+
+$response = Embeddings::for(['hello', 'world'])
+    ->generate(provider: 'workers-ai', model: '@cf/baai/bge-base-en-v1.5');
+
+$response->embeddings; // one vector per input
+$response->tokens;     // total tokens
+```
+
+Without `model:`, the package uses `@cf/baai/bge-large-en-v1.5`. Change the default with `models.embeddings.default`.
+
+## Pass extra request fields
+
+Use `withProviderOptions()`:
+
+```php
+Embeddings::for(['hello'])
+    ->withProviderOptions(['encoding_format' => 'base64'])
+    ->generate(provider: 'workers-ai');
+```
+
+Before `laravel/ai` 0.9, the method was `providerOptions()`.
+
+The package keeps control of `model` and `input`. It removes these keys from your options.
+
+## Dimensions
+
+The config key `models.embeddings.dimensions` defaults to `1024`. The package reports this value to Laravel AI. It does not send it to Cloudflare. The vector size comes from the model. If you change the model, set `dimensions` to match it, so your vector storage uses the right size.
+
+## Gateway note
+
+Embeddings through the AI Gateway provider path `workers-ai/v1` can return `401 Authentication error` on a gateway with Authenticated Gateway turned on. The default `/compat` path does not have this problem. See [How it works](/concepts/how-it-works/).

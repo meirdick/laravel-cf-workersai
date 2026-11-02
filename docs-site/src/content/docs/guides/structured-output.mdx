@@ -1,0 +1,69 @@
+---
+title: Structured output
+description: Get JSON that matches a schema from Workers AI, with strict mode and automatic re-ask.
+sidebar:
+  order: 4
+---
+
+Implement `Laravel\Ai\Contracts\HasStructuredOutput` on the agent. Return a schema from `schema()`.
+
+```php
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Attributes\Strict;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasStructuredOutput;
+use Laravel\Ai\Promptable;
+
+#[Strict]
+class TaskAgent implements Agent, HasStructuredOutput
+{
+    use Promptable;
+
+    public function instructions(): string
+    {
+        return 'Extract the task from the message.';
+    }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return [
+            'title' => $schema->string()->required(),
+            'priority' => $schema->string()->enum(['low', 'high'])->required(),
+        ];
+    }
+}
+
+$task = (new TaskAgent)->prompt('Fix the login bug, it is urgent.', provider: 'workers-ai');
+$task->toArray();
+```
+
+The package sends the schema as `response_format` with type `json_schema`.
+
+## Strict mode
+
+Add `#[Strict]` to the agent. The request then sends `strict: true`. The schema requires all properties. Without `#[Strict]`, the request sends `strict: false`.
+
+Some models ignore the strict flag.
+
+## Automatic re-ask
+
+Workers AI JSON mode is best-effort. A model can omit a required field or return a value outside an enum.
+
+The package checks each structured response for required fields and enum values. If the check fails, it adds the error to the conversation and asks again. It asks up to `structured_output_retries` times. The default is 2.
+
+```php
+'workers-ai' => [
+    // ...
+    'structured_output_retries' => 0, // turn re-ask off
+],
+```
+
+The package does not re-ask after a finish reason of `length`. A larger token cap fixes that, not a re-ask. A re-ask runs inside one step. It does not use your step limit.
+
+## Give structured calls enough budget
+
+Reasoning and the answer share one token cap. For extraction work:
+
+- Set `#[ReasoningEffort(ReasoningEffort::LOW)]`. See [Reasoning models](/guides/reasoning/).
+- Raise `#[Timeout]`.
+- Turn on `throw_on_truncation` so a cut-off JSON object throws. See [Errors and retries](/guides/errors-and-retries/).

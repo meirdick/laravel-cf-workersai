@@ -1,0 +1,95 @@
+---
+title: Tools
+description: Let a Workers AI model call your PHP tools, and choose a model that calls them reliably.
+sidebar:
+  order: 3
+---
+
+Tool calls use the standard Laravel AI interfaces. The package maps each tool to an OpenAI-style function definition.
+
+## Define a tool and an agent
+
+```php
+use Illuminate\Contracts\JsonSchema\JsonSchema;
+use Laravel\Ai\Contracts\Agent;
+use Laravel\Ai\Contracts\HasTools;
+use Laravel\Ai\Contracts\Tool;
+use Laravel\Ai\Promptable;
+use Laravel\Ai\Tools\Request;
+
+class GetWeather implements Tool
+{
+    public function description(): string
+    {
+        return 'Look up the current weather.';
+    }
+
+    public function handle(Request $request): string
+    {
+        return "Sunny in {$request['city']}.";
+    }
+
+    public function schema(JsonSchema $schema): array
+    {
+        return ['city' => $schema->string()->required()];
+    }
+}
+
+class WeatherAgent implements Agent, HasTools
+{
+    use Promptable;
+
+    public function instructions(): string
+    {
+        return 'Use the tool to answer weather questions.';
+    }
+
+    public function tools(): iterable
+    {
+        return [new GetWeather];
+    }
+}
+
+(new WeatherAgent)->prompt('Weather in Tokyo?', provider: 'workers-ai');
+```
+
+## What the package does
+
+- It sends `tool_choice: auto` when the agent has tools.
+- A tool with no parameters works. The package sends an empty `properties` object, because Workers AI rejects an empty array.
+- It keeps reasoning text from a tool-call turn and sends it back on the next turn.
+- It supports sub-agents and MCP tools. The package uses the tool name from the tool's `name()` method when one exists, so two instances of one class do not collide.
+- It encodes array tool results with unescaped slashes and unicode.
+
+## Choose a model for tools
+
+Not every model calls tools. The maintainer measured this on 2026-06-11 on the direct API:
+
+| Model | Tool calls |
+| --- | --- |
+| `@cf/meta/llama-3.3-70b-instruct-fp8-fast` (default) | Answers in prose. Does not call tools on the `/v1` endpoint. |
+| `@cf/meta/llama-4-scout-17b-16e-instruct` | Calls tools. |
+| `@cf/openai/gpt-oss-120b` | Calls tools. |
+
+If your agent uses tools, set the model on the agent or the call. Do not rely on the default.
+
+## Force a tool call
+
+Open-weight models call a tool only some of the time under `tool_choice: auto`. To force a call, set `tool_choice` in provider options:
+
+```php
+public function providerOptions(Lab|string $provider): array
+{
+    return $provider === 'workers-ai' ? ['tool_choice' => 'required'] : [];
+}
+```
+
+On the turn after the tool result, the package changes a forced `tool_choice` to `auto`. Without this change, the model calls a tool again and again until the step limit, and returns no text. The value `none` is kept.
+
+## Provider tools are not supported
+
+Laravel AI provider tools, such as web search, are not supported. The package throws `RuntimeException` with the message `Workers AI does not support [ToolName] provider tools.`
+
+## Limit the steps
+
+Laravel AI runs the tool loop. Use `#[MaxSteps]` to limit the number of steps.

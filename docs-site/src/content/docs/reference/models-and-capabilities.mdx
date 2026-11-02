@@ -1,0 +1,58 @@
+---
+title: Capabilities
+description: What the provider supports, and what it does not, in one table.
+sidebar:
+  order: 2
+---
+
+## Supported
+
+| Capability | Supported | Notes |
+| --- | --- | --- |
+| Text generation | Yes | Any Workers AI chat model. |
+| Streaming | Yes | Text and reasoning events. |
+| Tool calls | Yes | Model must support tools. See [Tools](/guides/tools/). |
+| Sub-agents and MCP tools | Yes | Mapped as tools. |
+| Structured output | Yes | `json_schema` response format, with optional `#[Strict]` and re-ask. |
+| Embeddings | Yes | Any Workers AI embedding model. |
+| Image input | Yes | JPEG, PNG, GIF and WebP for uploaded files. See [Image input](/guides/image-input/). |
+| Reasoning text | Yes | Read from `reasoning_content`, `reasoning` or `thinking`. |
+| `reasoning_effort` | Yes | `low`, `medium`, `high`. |
+| AI Gateway | Yes | `/compat` by default. Authenticated Gateway supported. |
+| Failover | Yes | For transient failures. See [Errors and retries](/guides/errors-and-retries/). |
+| Neuron figures | Yes | By event, for non-streamed calls. |
+
+## Not supported
+
+| Capability | Behavior |
+| --- | --- |
+| Image generation | Not implemented by this provider. |
+| Audio, transcription | Not implemented by this provider. |
+| Reranking | Not implemented by this provider. |
+| Document attachments | Throws `InvalidArgumentException`. |
+| Audio or video attachments | Throws `InvalidArgumentException`. |
+| Laravel AI provider tools (web search and similar) | Throws `RuntimeException`. |
+| `#[CacheInstructions]` | Has no effect. |
+| Request concurrency limits | Not provided. |
+
+## Models
+
+The package does not keep a list of models. You give the model name, and Cloudflare decides if it exists and if your account can use it. See [Models](/guides/models/) for the package defaults and for notes from the maintainer's tests.
+
+## Laravel AI versions
+
+| `laravel/ai` | Package version |
+| --- | --- |
+| `^0.7`, `^0.8` | `^0.5` |
+| `^0.9`, `^0.10`, `^0.11` | Current 0.x release |
+| `^1.0` | `1.0.x-dev` from `main`, until `laravel/ai` tags 1.0 |
+
+Some features depend on the `laravel/ai` version:
+
+| Feature | Needs |
+| --- | --- |
+| Per-call headers (`withHeaders()`) | `laravel/ai` 1.x. The package reads the `headers` config key on every supported version. |
+| `StepResponse::$raw` (`$response->raw`) | A `laravel/ai` version after 0.9. |
+| `StepResponse::$reasoning` | `laravel/ai` 1.x. |
+| `ProviderConnectionException` on timeout | `laravel/ai` 0.11 or later. |
+| `StreamErrorException` on stream error | `laravel/ai` 0.11 or later. |
