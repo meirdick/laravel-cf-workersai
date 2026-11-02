@@ -1,11 +1,15 @@
 ---
 title: Changelog
-description: Release notes for laravel-cf-workersai, with the summary of version 1.0.0.
+description: Release notes for laravel-cf-workersai, with summaries of recent versions.
 sidebar:
   order: 90
 ---
 
 Full release notes are in [CHANGELOG.md](https://github.com/meirdick/laravel-cf-workersai/blob/main/CHANGELOG.md) in the repository. The format follows Keep a Changelog. The package follows Semantic Versioning.
+
+## 1.0.1 (2026-11-02)
+
+- Streamed calls now dispatch `WorkersAiUsageReported` with the call's neuron total. Before, only non-streamed calls reported neurons. See [Cost tracking](/guides/cost-tracking/).
 
 ## 1.0.0 (2026-11-02)
 
