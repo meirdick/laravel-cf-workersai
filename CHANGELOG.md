@@ -34,7 +34,7 @@ Not tagged. This release adds laravel/ai 1.x support to the 0.x line in one code
 ### Verified
 
 - laravel/ai v0.9.1: 205 passed, 53 skipped. v0.10.3: 208 passed, 50 skipped. v0.11.2: 208 passed, 50 skipped. v1.0.0: 213 passed, 45 skipped. v1.3.0: 213 passed, 45 skipped.
-- Live, direct API, 2026-11-02: 4 integration tests pass on v1.3.0 and v0.11.2. The AI Gateway and stress tests were not run.
+- Live, 2026-11-02, on the direct API and an AI Gateway: 7 integration tests and the 36-test stress sweep pass on v1.3.0 and v0.11.2.
 - Live, 2026-09-16, on the direct API and an AI Gateway: 7 integration tests and the 36-test stress sweep pass.
 
 ## [0.8.2] - 2026-09-09

@@ -293,7 +293,7 @@ laravel/ai 1.0 to 1.3 is out. The 9de5156 audit above predicted none of the foll
 | 1.2.1 (#1112): `HandlesFailoverErrors` retries once on a 429 or overloaded status with `Retry-After` of 10 or less. | `retryAfterSeconds()` returns `null` in `WorkersAiGateway`. Without it, the HTTP client's 3 attempts became 6. |
 | `ai_sdk_extra_headers` | Removed upstream in #1026, before 1.0. Earlier docs here named it. They no longer do. |
 
-Gateway contracts did not change. The suite passes on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. Live tests pass on v1.3.0 and v0.11.2 against the direct API. The AI Gateway live tests were not run: the `default` gateway is not reachable with the available token.
+Gateway contracts did not change. The suite passes on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. Live tests pass on v1.3.0 and v0.11.2, direct and through an AI Gateway: 7 integration tests plus the 36-test stress sweep (43 total) on each.
 
 Re-run this audit on each laravel/ai minor: diff `src/Gateway`, `src/Responses/Data` and `src/Responses/EmbeddingsResponse.php`.
 
