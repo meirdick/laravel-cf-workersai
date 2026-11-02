@@ -87,7 +87,8 @@ use Laravel\Ai\Attributes\Timeout;
 #[Timeout(120)]
 class ExtractionAgent implements Agent { /* ... */ }
 
-// or per call:
+// or per call, with any agent:
+$agent = new ExtractionAgent;
 $agent->prompt('...', provider: 'workers-ai', timeout: 120);
 ```
 

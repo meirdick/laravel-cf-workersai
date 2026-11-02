@@ -19,7 +19,16 @@ const nimbusConfig = defineNimbusConfig({
   socialImageAlt: "laravel-cf-workersai documentation",
   // The home page leads the sidebar; every other page joins it automatically.
   sidebar: {
-    items: ["index", { autogenerate: { collection: "docs" } }],
+    items: [
+      "index",
+      "quickstart",
+      { label: "Concepts", autogenerate: { directory: "concepts" } },
+      { label: "Guides", autogenerate: { directory: "guides" } },
+      { label: "Reference", autogenerate: { directory: "reference" } },
+      "troubleshooting",
+      "limits-and-faq",
+      "changelog",
+    ],
   },
 });
 

@@ -5,7 +5,9 @@ sidebar:
   order: 12
 ---
 
-You do not need Cloudflare credentials to test your own code. Use the Laravel AI fakes.
+You do not need real Cloudflare credentials to test your own code. Use the Laravel AI fakes. The `Http::fake` example below needs a fake token and account ID in config.
+
+The examples use Pest. For PHPUnit, put the same calls in a test method and replace `expect(...)->toBe(...)` with `$this->assertSame(...)`.
 
 ## Fake an agent
 
@@ -19,7 +21,7 @@ expect($response->text)->toBe('Reset it from the login page.');
 SupportAgent::assertPrompted('How do I reset my password?');
 ```
 
-With no list of responses, the fake returns `Fake response for prompt: <prompt>`. You can pass a closure that receives the prompt.
+With no list of responses, the fake returns `Fake response for prompt: ` followed by the first 10 words of the prompt. You can pass a closure that receives the prompt.
 
 The fake replaces the gateway. No request reaches the package. Use it for your app logic.
 
@@ -42,6 +44,14 @@ To test with the real package code, fake the HTTP call. This checks the request 
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
+config([
+    'ai.providers.workers-ai' => [
+        'driver' => 'workers-ai',
+        'key' => 'test-key',
+        'account_id' => 'test-account',
+    ],
+]);
+
 Http::fake([
     'api.cloudflare.com/*' => Http::response([
         'id' => 'chatcmpl-1',
@@ -56,7 +66,7 @@ Http::fake([
     ]),
 ]);
 
-$response = agent('helper')->prompt('Hi', provider: 'workers-ai');
+$response = agent('You are a helpful assistant.')->prompt('Hi', provider: 'workers-ai');
 
 Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/chat/completions'));
 ```

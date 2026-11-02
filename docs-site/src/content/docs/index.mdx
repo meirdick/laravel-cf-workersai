@@ -12,7 +12,7 @@ You write the same Laravel AI code as for any other provider. You change the pro
 ```php
 use function Laravel\Ai\agent;
 
-$response = agent('helper')->prompt('Say hi.', provider: 'workers-ai');
+$response = agent('You are a helpful assistant.')->prompt('Say hi.', provider: 'workers-ai');
 echo $response->text;
 ```
 
@@ -59,12 +59,12 @@ See [How it works](/concepts/how-it-works/) for details.
 | Item | Version |
 | --- | --- |
 | PHP | `^8.3` |
-| `laravel/ai` | `^0.9`, `^0.10`, `^0.11` or `^1.0` |
+| `laravel/ai` | `^0.9`, `^0.10` or `^0.11` |
 | Package | `meirdick/laravel-cf-workersai` |
 
-For `laravel/ai` `^0.7` or `^0.8`, use package version `^0.5`.
+For `laravel/ai` `^0.7` or `^0.8`, use package version `^0.5`. Package version `^0.8` needs `laravel/ai` `^0.9` to `^0.11`.
 
-Support for `laravel/ai` `^1.0` is on the `main` branch. Install it with `"meirdick/laravel-cf-workersai": "1.0.x-dev"`. The package tags 1.0.0 when `laravel/ai` tags 1.0. See the [changelog](/changelog/).
+`laravel/ai` 1.x is not supported yet. See the [changelog](/changelog/).
 
 ## Next steps
 

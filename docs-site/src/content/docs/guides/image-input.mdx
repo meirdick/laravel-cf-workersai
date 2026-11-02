@@ -14,7 +14,7 @@ $response = agent('Describe images.')->prompt(
     'What is in this picture?',
     attachments: [Image::fromPath(storage_path('app/photo.jpg'))],
     provider: 'workers-ai',
-    model: '<a vision model from the Cloudflare catalog>',
+    model: '@cf/your/vision-model', // replace: see below
 );
 ```
 
@@ -26,9 +26,12 @@ $response = agent('Describe images.')->prompt(
 | `StoredImage` | `Image::fromStorage()` | Base64 data URL |
 | `Base64Image` | `Image::fromBase64()` | Base64 data URL |
 | `RemoteImage` | `Image::fromUrl()` | The URL |
-| Uploaded file | `Image::fromUpload()` or an `UploadedFile` | Base64 data URL |
+| Raw `UploadedFile` | Passed as is | Base64 data URL, MIME checked |
+| Uploaded file | `Image::fromUpload()` | Base64 data URL (it becomes a `Base64Image`) |
 
-An uploaded file must have one of these MIME types: `image/jpeg`, `image/png`, `image/gif` or `image/webp`. Other types (SVG, AVIF, HEIC) are rejected.
+The MIME allowlist (`image/jpeg`, `image/png`, `image/gif`, `image/webp`) applies only when you pass a raw `Illuminate\Http\UploadedFile`, such as `$request->file('photo')`. For other MIME types (SVG, AVIF, HEIC), the package throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
+
+`Image::fromUpload()` returns a `Base64Image`. The package does not check the MIME type of a `Base64Image`, `LocalImage`, `StoredImage` or `RemoteImage`. Cloudflare then accepts or rejects the file. Send only the four types above.
 
 ## Not supported
 
@@ -37,5 +40,5 @@ An uploaded file must have one of these MIME types: `image/jpeg`, `image/png`, `
 - Image generation.
 
 <Aside type="note">
-  The package does not check that the model accepts images. Pick the model from the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
+  The package does not check that the model accepts images. The package author's notes name no vision model. To find one, open the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/) and filter for models that take image input. Copy its `@cf/...` name.
 </Aside>

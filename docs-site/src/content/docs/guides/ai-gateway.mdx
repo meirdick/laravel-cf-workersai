@@ -43,7 +43,7 @@ Set `gateway_token`:
 
 The package sends `cf-aig-authorization: Bearer <gateway_token>` on chat, streaming and embeddings. If you leave `gateway_token` empty, the package sends no header.
 
-Without the header, an authenticated gateway returns `{"code":10000,"message":"Authentication error"}`. This message does not name the gateway or the header.
+Without the header, an authenticated gateway returns HTTP 401 with `{"code":10000,"message":"Authentication error"}`. Laravel throws `Illuminate\Http\Client\RequestException`. This message does not name the gateway or the header.
 
 ## Use the provider path
 

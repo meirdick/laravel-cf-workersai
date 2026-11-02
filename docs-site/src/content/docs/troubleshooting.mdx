@@ -32,7 +32,9 @@ sidebar:
 **Cause.** The provider entry in `config/ai.php` has no `driver` value.
 **Fix.** Add `'driver' => 'workers-ai'` to the entry.
 
-### Authentication error with code 10000
+### RequestException: HTTP request returned status code 401
+
+The message ends with `{"code":10000,"message":"Authentication error"}`. The exception is `Illuminate\Http\Client\RequestException`, not `AiException`.
 
 **Cause.** One of these:
 
@@ -49,12 +51,12 @@ sidebar:
 **Cause.** You wrote `workers-ai/@cf/...` and the endpoint is the direct API or the provider path.
 **Fix.** Drop the prefix. Write `@cf/...`.
 
-### 410 Model has been deprecated
+### 410 Model has been deprecated (RequestException)
 
 **Cause.** Cloudflare retired the model.
 **Fix.** Pick another model. `@cf/meta/llama-3.1-8b-instruct` is retired.
 
-### 403 This account is not allowed to access
+### 403 This account is not allowed to access (RequestException)
 
 **Cause.** Your account or plan does not include the model.
 **Fix.** Use a model your account can use.
@@ -91,7 +93,7 @@ sidebar:
 **Cause.** Workers AI JSON mode is best-effort. The package re-asks up to 2 times by default.
 **Fix.** Add `#[Strict]`. Raise `structured_output_retries`. Lower `reasoning_effort`. Raise the token cap.
 
-### reasoning_effort must be one of: low, medium, high
+### Workers AI `reasoning_effort` must be one of: low, medium, high
 
 **Cause.** You used `none`, `minimal` or another value.
 **Fix.** Use `low`, `medium` or `high`.
@@ -144,11 +146,11 @@ sidebar:
 
 ### composer cannot resolve laravel/ai
 
-**Cause.** Your project requires `laravel/ai` `^0.7` or `^0.8`. Current versions need `^0.9` or later.
+**Cause.** Your project requires `laravel/ai` `^0.7` or `^0.8`. Package version `^0.8` needs `laravel/ai` `^0.9` to `^0.11`.
 **Fix.** Bump both packages in one command:
 
 ```bash
-composer require "laravel/ai:^0.11" "meirdick/laravel-cf-workersai:^0.7" -W
+composer require "laravel/ai:^0.11" "meirdick/laravel-cf-workersai:^0.8" -W
 ```
 
 ### table agent_conversations has no column named participant_type

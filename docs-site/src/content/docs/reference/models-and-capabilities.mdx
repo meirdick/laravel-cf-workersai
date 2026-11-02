@@ -44,15 +44,16 @@ The package does not keep a list of models. You give the model name, and Cloudfl
 | `laravel/ai` | Package version |
 | --- | --- |
 | `^0.7`, `^0.8` | `^0.5` |
-| `^0.9`, `^0.10`, `^0.11` | Current 0.x release |
-| `^1.0` | `1.0.x-dev` from `main`, until `laravel/ai` tags 1.0 |
+| `^0.9` | `^0.8` |
+| `^0.10` | `^0.8` |
+| `^0.11` | `^0.8` |
+
+`laravel/ai` 1.x is not supported. Package version `^0.8` requires `laravel/ai` `^0.9 || ^0.10 || ^0.11`.
 
 Some features depend on the `laravel/ai` version:
 
 | Feature | Needs |
 | --- | --- |
-| Per-call headers (`withHeaders()`) | `laravel/ai` 1.x. The package reads the `headers` config key on every supported version. |
 | `StepResponse::$raw` (`$response->raw`) | A `laravel/ai` version after 0.9. |
-| `StepResponse::$reasoning` | `laravel/ai` 1.x. |
 | `ProviderConnectionException` on timeout | `laravel/ai` 0.11 or later. |
 | `StreamErrorException` on stream error | `laravel/ai` 0.11 or later. |

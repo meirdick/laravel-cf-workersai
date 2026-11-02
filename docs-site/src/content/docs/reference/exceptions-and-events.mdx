@@ -23,7 +23,8 @@ These come from Laravel AI or PHP, not from the package:
 
 | Class | Cause |
 | --- | --- |
-| `Laravel\Ai\Exceptions\AiException` | Config errors (missing token, bad `account_id`, bad `gateway`, both `url` and `account_id`), prefixed model on the direct API, Cloudflare error payloads, response without choices. |
+| `Laravel\Ai\Exceptions\AiException` | Config errors (missing token, bad `account_id`, bad `gateway`, both `url` and `account_id`), prefixed model on the direct API, an error payload inside an HTTP 200 response, response without choices. |
+| `Illuminate\Http\Client\RequestException` | Any non-2xx status the package does not map: 400, 401, 403, 404, 410, 413 and others. The message holds the status and the Cloudflare body. Not failoverable. |
 | `Laravel\Ai\Exceptions\RateLimitedException` | HTTP 429 after all attempts. |
 | `Laravel\Ai\Exceptions\ProviderOverloadedException` | HTTP 502, 503, 504, 520, 522 or 524 after all attempts. |
 | `Laravel\Ai\Exceptions\InsufficientCreditsException` | HTTP 402. |

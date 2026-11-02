@@ -44,7 +44,7 @@ The package dispatches nothing when the response has no `neurons` field.
 The HTTP response is on the Laravel AI response, and on each step of a tool loop:
 
 ```php
-$response = agent('helper')->prompt('...', provider: 'workers-ai');
+$response = agent('You are a helpful assistant.')->prompt('...', provider: 'workers-ai');
 
 $neurons = $response->raw?->json('usage.neurons');
 $latency = $response->raw?->transferStats?->getTransferTime();

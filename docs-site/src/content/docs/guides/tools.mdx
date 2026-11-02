@@ -78,6 +78,9 @@ If your agent uses tools, set the model on the agent or the call. Do not rely on
 Open-weight models call a tool only some of the time under `tool_choice: auto`. To force a call, set `tool_choice` in provider options:
 
 ```php
+use Laravel\Ai\Enums\Lab;
+
+// Inside your agent class:
 public function providerOptions(Lab|string $provider): array
 {
     return $provider === 'workers-ai' ? ['tool_choice' => 'required'] : [];

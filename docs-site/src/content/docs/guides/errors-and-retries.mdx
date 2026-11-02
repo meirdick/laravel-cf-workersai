@@ -69,9 +69,23 @@ try {
 }
 ```
 
-## Error messages from Cloudflare
+## Other HTTP errors
 
-Cloudflare uses two error shapes: `{"error": {...}}` and `{"errors": [...]}`. The package reads both. It throws `AiException` with a message in this form: `Workers AI Error: [type] message`.
+The package maps only the statuses in the table above. Any other non-2xx status, such as 400, 401, 403, 404, 410 or 413, throws `Illuminate\Http\Client\RequestException`. A bad API token is one example. The message looks like `HTTP request returned status code 401: {"code":10000,"message":"Authentication error"}`. These errors do not trigger failover. Read the status with `$e->response->status()` and the body with `$e->response->json()`.
+
+```php
+use Illuminate\Http\Client\RequestException;
+
+try {
+    $response = $agent->prompt('...', provider: 'workers-ai');
+} catch (RequestException $e) {
+    report($e->response->status());
+}
+```
+
+## Error payloads in a 200 response
+
+Cloudflare uses two error shapes: `{"error": {...}}` and `{"errors": [...]}`. When a successful (HTTP 200) response carries one of them, the package reads both. It throws `AiException` with a message in this form: `Workers AI Error: [type] message`.
 
 If a response has no `choices`, the package throws `AiException` with `Workers AI Error: Response did not contain any choices.`
 

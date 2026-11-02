@@ -10,7 +10,7 @@ Call `stream()` on an agent. Loop over the events.
 ```php
 use Laravel\Ai\Streaming\Events\TextDelta;
 
-foreach (agent('helper')->stream('Tell me a story.', provider: 'workers-ai') as $event) {
+foreach (agent('You are a helpful assistant.')->stream('Tell me a story.', provider: 'workers-ai') as $event) {
     if ($event instanceof TextDelta) {
         echo $event->delta;
     }

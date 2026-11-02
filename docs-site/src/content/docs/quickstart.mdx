@@ -11,7 +11,7 @@ This page takes you from nothing to a working request. It needs about five minut
 
 You need:
 
-- A Laravel app with `laravel/ai` installed. See the Laravel AI documentation.
+- A Laravel app with `laravel/ai` installed. See the [Laravel AI documentation](https://laravel.com/docs/ai).
 - PHP 8.3 or later.
 - A Cloudflare account.
 
@@ -23,13 +23,20 @@ You need:
     composer require meirdick/laravel-cf-workersai
     ```
 
-    Laravel package discovery registers the service provider. You do not publish anything.
+    Laravel package discovery registers the service provider. You do not publish anything for this package.
+  </Step>
+  <Step title="Publish the Laravel AI config">
+    Skip this step if `config/ai.php` exists.
+
+    ```bash
+    php artisan vendor:publish --provider="Laravel\Ai\AiServiceProvider"
+    ```
   </Step>
   <Step title="Find your account ID">
-    Open the Cloudflare dashboard. The account ID is the 32-character string in the dashboard URL after `/accounts/`. Do not paste a full URL.
+    Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com). Select your account. The account ID is the 32-character string in the dashboard URL after `/accounts/`. Do not paste a full URL. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
   </Step>
   <Step title="Create an API token">
-    In the Cloudflare dashboard, create an API token with the `Workers AI: Read` permission. Copy the token. Cloudflare shows it once.
+    In the Cloudflare dashboard, open your profile, then API Tokens, then Create Token. Give the token the `Workers AI: Read` permission. This is the permission name the package uses in its error message. The dashboard can name it differently, so look for Workers AI. Copy the token. Cloudflare shows it once. See [Create API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
   </Step>
   <Step title="Set environment variables">
     ```env
@@ -38,13 +45,13 @@ You need:
     ```
   </Step>
   <Step title="Add the provider to config/ai.php">
+    Add this entry inside the existing `providers` array:
+
     ```php
-    'providers' => [
-        'workers-ai' => [
-            'driver'     => 'workers-ai',
-            'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
-            'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
-        ],
+    'workers-ai' => [
+        'driver'     => 'workers-ai',
+        'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
     ],
     ```
 
@@ -61,7 +68,7 @@ You need:
 ```php
 use function Laravel\Ai\agent;
 
-$response = agent('helper')->prompt('Say hi.', provider: 'workers-ai');
+$response = agent('You are a helpful assistant.')->prompt('Say hi.', provider: 'workers-ai');
 
 echo $response->text;
 ```
@@ -71,7 +78,7 @@ Without a `model:` argument, the package uses `@cf/meta/llama-3.3-70b-instruct-f
 Pass any Workers AI model with `model:`:
 
 ```php
-$response = agent('helper')->prompt(
+$response = agent('You are a helpful assistant.')->prompt(
     'Summarize this in one sentence.',
     provider: 'workers-ai',
     model: '@cf/openai/gpt-oss-120b',
