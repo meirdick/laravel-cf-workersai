@@ -1,5 +1,7 @@
 <?php
 
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
+
 /*
 |--------------------------------------------------------------------------
 | Live stress tests targeting real-world failure modes
@@ -54,7 +56,7 @@ describe('reliability sweep (direct)', function () {
 
         expect($response->text)->not->toBe('')
             ->and($finishReason)->toBe(FinishReason::Stop)
-            ->and($response->usage->completionTokens)->toBeGreaterThan(0);
+            ->and(SdkCompat::completionTokens($response->usage))->toBeGreaterThan(0);
     })->with([STRESS_FAST_MODEL, STRESS_BIG_MODEL])->with(range(1, 5));
 
     test('truncation surfaces as Length, not a silent stop', function (int $rep) {
@@ -126,7 +128,7 @@ describe('reliability sweep (direct)', function () {
 
         expect(count($deltas))->toBeGreaterThan(10)
             ->and($ends)->toHaveCount(1)
-            ->and($ends[0]->usage->completionTokens)->toBeGreaterThan(50);
+            ->and(SdkCompat::completionTokens($ends[0]->usage))->toBeGreaterThan(50);
     })->with(range(1, 3));
 
     test('a transfer timeout fails fast instead of triple-retrying', function () {
@@ -194,7 +196,7 @@ describe('reliability sweep (via AI Gateway)', function () {
 
         expect(count($deltas))->toBeGreaterThan(10)
             ->and($ends)->toHaveCount(1)
-            ->and($ends[0]->usage->completionTokens)->toBeGreaterThan(50);
+            ->and(SdkCompat::completionTokens($ends[0]->usage))->toBeGreaterThan(50);
     });
 
     test('structured output through the gateway returns schema-shaped JSON', function (int $rep) {

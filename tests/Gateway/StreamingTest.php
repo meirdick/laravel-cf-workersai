@@ -14,6 +14,7 @@ use Laravel\Ai\Streaming\Events\TextDelta;
 use Laravel\Ai\Streaming\Events\TextEnd;
 use Laravel\Ai\Streaming\Events\TextStart;
 use Laravel\Ai\Streaming\Events\ToolCall as ToolCallEvent;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Tests\Fixtures\Agents\ProviderOptionsWithToolsAgent;
 
 beforeEach(function () {
@@ -270,6 +271,6 @@ test('streaming captures usage from final chunk', function () {
 
     $streamEnd = array_values(array_filter($events, fn ($e) => $e instanceof StreamEnd))[0];
 
-    expect($streamEnd->usage->promptTokens)->toBe(42)
-        ->and($streamEnd->usage->completionTokens)->toBe(10);
+    expect(SdkCompat::promptTokens($streamEnd->usage))->toBe(42)
+        ->and(SdkCompat::completionTokens($streamEnd->usage))->toBe(10);
 });

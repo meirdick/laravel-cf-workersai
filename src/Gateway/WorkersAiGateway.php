@@ -14,6 +14,7 @@ use Laravel\Ai\Responses\EmbeddingsResponse;
 use Illuminate\Http\Client\RequestException;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\RetryPolicy;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
 use Meirdick\WorkersAi\Exceptions\GatewayTimeoutException;
 
@@ -80,7 +81,7 @@ class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
 
         return new EmbeddingsResponse(
             collect($data['data'] ?? [])->pluck('embedding')->all(),
-            UsageTokens::totalTokens($data['usage'] ?? []),
+            SdkCompat::embeddingsUsage(UsageTokens::totalTokens($data['usage'] ?? [])),
             new Meta($provider->name(), $model),
         );
     }
@@ -113,6 +114,19 @@ class WorkersAiGateway implements EmbeddingGateway, StepTextGateway
 
             throw $exception;
         }
+    }
+
+    /**
+     * Disable laravel/ai's own Retry-After retry (added in 1.2.1, PR #1112).
+     *
+     * The HTTP client already retries per RetryPolicy, honouring Retry-After.
+     * Leaving the upstream retry on would re-run the whole exhausted sequence
+     * once more (3 attempts become 6) whenever the final response carries a
+     * short Retry-After.
+     */
+    protected function retryAfterSeconds(\Throwable $exception): ?int
+    {
+        return null;
     }
 
     /**

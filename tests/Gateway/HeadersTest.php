@@ -15,9 +15,8 @@ use function Laravel\Ai\agent;
 |
 | laravel/ai 0.10.3 added a `headers` key to every provider's connection
 | config. 1.x builds on it: `Provider::withHeaders()` clones the provider
-| with extra headers merged into that same key, and the `ai_sdk_extra_headers`
-| provider option rides on it. A gateway that ignores `headers` silently
-| drops both. Through 0.8.2 this one did.
+| with extra headers merged into that same key. A gateway that ignores
+| `headers` silently drops both. Through 0.8.2 this one did.
 |
 */
 beforeEach(function () {

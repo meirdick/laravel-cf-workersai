@@ -9,6 +9,7 @@ use Laravel\Ai\Messages\ToolResultMessage;
 use Laravel\Ai\Messages\UserMessage;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\Data\ToolResult;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 
 trait MapsMessages
 {
@@ -65,7 +66,7 @@ trait MapsMessages
     /**
      * Map an assistant message to Chat Completions format.
      *
-     * Replays `reasoning_content` from `providerContentBlocks` when present so
+     * Replays `reasoning_content` from the message's replay blocks (`providerContentBlocks` before 1.x) when present so
      * thinking models (Kimi K2.5, Gemma 4, QwQ, DeepSeek-style) keep their
      * chain of thought across tool-call turns. Without the replay, second-turn
      * models lose the context that led to the first tool call and produce
@@ -89,8 +90,8 @@ trait MapsMessages
         ];
 
         if ($message instanceof AssistantMessage
-            && filled($message->providerContentBlocks['reasoning_content'] ?? null)) {
-            $msg['reasoning_content'] = $message->providerContentBlocks['reasoning_content'];
+            && filled($reasoning = SdkCompat::replayedReasoning($message))) {
+            $msg['reasoning_content'] = $reasoning;
         }
 
         if ($message instanceof AssistantMessage && $message->toolCalls->isNotEmpty()) {

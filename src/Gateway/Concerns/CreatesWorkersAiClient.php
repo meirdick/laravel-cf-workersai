@@ -37,9 +37,8 @@ trait CreatesWorkersAiClient
      * `headers` array on top, matched case-insensitively so a configured
      * header replaces a package header of the same name. That `headers`
      * key is what laravel/ai 0.10.3 introduced for every provider, and
-     * what 1.x's `Provider::withHeaders()` and the `ai_sdk_extra_headers`
-     * provider option write into. Through 0.8.2 this client never read it,
-     * so both were silently dropped here.
+     * what 1.x's `Provider::withHeaders()` writes into. Through 0.8.2 this
+     * client never read it, so both were silently dropped here.
      */
     protected function client(Provider $provider, ?int $timeout = null): PendingRequest
     {

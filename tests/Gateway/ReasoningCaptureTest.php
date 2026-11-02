@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Tests\Fixtures\Agents\ToolUsingAgent;
 
 beforeEach(function () {
@@ -97,7 +98,7 @@ test('the reasoning a turn produced is carried onto the step response', function
     );
 
     expect($step->reasoning)->toBe('Six times seven.')
-        ->and($step->providerContentBlocks['reasoning_content'])->toBe('Six times seven.');
+        ->and(SdkCompat::replayedReasoning($step))->toBe('Six times seven.');
 });
 
 test('streamed reasoning is carried onto the step response', function () {

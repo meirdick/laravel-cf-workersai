@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Http;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Tests\Fixtures\Agents\AssistantAgent;
 
 use function Laravel\Ai\agent;
@@ -37,8 +38,8 @@ test('cached tokens are excluded from the prompt token count', function () {
 
     $response = agent()->prompt('Hello', provider: 'workersai');
 
-    expect($response->usage->promptTokens)->toBe(40)
-        ->and($response->usage->cacheReadInputTokens)->toBe(60);
+    expect(SdkCompat::promptTokens($response->usage))->toBe(40)
+        ->and(SdkCompat::cacheReadTokens($response->usage))->toBe(60);
 });
 
 test('cached tokens are excluded from the streamed prompt token count', function () {
@@ -60,8 +61,8 @@ test('cached tokens are excluded from the streamed prompt token count', function
     $events = $this->collectStreamEvents(new AssistantAgent);
     $end = collect($events)->whereInstanceOf(\Laravel\Ai\Streaming\Events\StreamEnd::class)->last();
 
-    expect($end->usage->promptTokens)->toBe(40)
-        ->and($end->usage->cacheReadInputTokens)->toBe(60);
+    expect(SdkCompat::promptTokens($end->usage))->toBe(40)
+        ->and(SdkCompat::cacheReadTokens($end->usage))->toBe(60);
 });
 
 test('a cached count larger than the prompt count clamps to zero instead of going negative', function () {
@@ -74,7 +75,7 @@ test('a cached count larger than the prompt count clamps to zero instead of goin
 
     Http::fake(['api.cloudflare.com/*' => Http::response($payload)]);
 
-    expect(agent()->prompt('Hello', provider: 'workersai')->usage->promptTokens)->toBe(0);
+    expect(SdkCompat::promptTokens(agent()->prompt('Hello', provider: 'workersai')->usage))->toBe(0);
 });
 
 test('reasoning tokens are read from completion_tokens_details when the top-level key is absent', function () {
@@ -87,7 +88,7 @@ test('reasoning tokens are read from completion_tokens_details when the top-leve
 
     Http::fake(['api.cloudflare.com/*' => Http::response($payload)]);
 
-    expect(agent()->prompt('Hello', provider: 'workersai')->usage->reasoningTokens)->toBe(30);
+    expect(SdkCompat::reasoningTokens(agent()->prompt('Hello', provider: 'workersai')->usage))->toBe(30);
 });
 
 test('a top-level reasoning_tokens key still wins', function () {
@@ -101,5 +102,5 @@ test('a top-level reasoning_tokens key still wins', function () {
 
     Http::fake(['api.cloudflare.com/*' => Http::response($payload)]);
 
-    expect(agent()->prompt('Hello', provider: 'workersai')->usage->reasoningTokens)->toBe(20);
+    expect(SdkCompat::reasoningTokens(agent()->prompt('Hello', provider: 'workersai')->usage))->toBe(20);
 });

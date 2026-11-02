@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Streaming\Events\StreamEnd;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Tests\Fixtures\Agents\ProviderOptionsWithToolsAgent;
 
 beforeEach(function () {
@@ -42,8 +43,8 @@ test('streamed usage is summed across tool-call steps', function () {
     $streamEnds = array_values(array_filter($events, fn ($e) => $e instanceof StreamEnd));
 
     expect($streamEnds)->toHaveCount(1)
-        ->and($streamEnds[0]->usage->promptTokens)->toBe(50)
-        ->and($streamEnds[0]->usage->completionTokens)->toBe(15);
+        ->and(SdkCompat::promptTokens($streamEnds[0]->usage))->toBe(50)
+        ->and(SdkCompat::completionTokens($streamEnds[0]->usage))->toBe(15);
 });
 
 test('a trailing all-zero usage chunk does not clobber real usage', function () {
@@ -78,8 +79,8 @@ test('a trailing all-zero usage chunk does not clobber real usage', function () 
     $streamEnd = $events[count($events) - 1];
 
     expect($streamEnd)->toBeInstanceOf(StreamEnd::class)
-        ->and($streamEnd->usage->promptTokens)->toBe(37)
-        ->and($streamEnd->usage->completionTokens)->toBe(1);
+        ->and(SdkCompat::promptTokens($streamEnd->usage))->toBe(37)
+        ->and(SdkCompat::completionTokens($streamEnd->usage))->toBe(1);
 });
 
 test('streamed usage without tool calls is unchanged', function () {
@@ -100,6 +101,6 @@ test('streamed usage without tool calls is unchanged', function () {
     $streamEnd = $events[count($events) - 1];
 
     expect($streamEnd)->toBeInstanceOf(StreamEnd::class)
-        ->and($streamEnd->usage->promptTokens)->toBe(10)
-        ->and($streamEnd->usage->completionTokens)->toBe(5);
+        ->and(SdkCompat::promptTokens($streamEnd->usage))->toBe(10)
+        ->and(SdkCompat::completionTokens($streamEnd->usage))->toBe(5);
 });

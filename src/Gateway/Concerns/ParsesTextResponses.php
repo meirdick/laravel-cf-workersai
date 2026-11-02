@@ -13,9 +13,10 @@ use Laravel\Ai\Responses\Data\Meta;
 use Laravel\Ai\Responses\Data\ToolCall;
 use Laravel\Ai\Responses\Data\Usage;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
-use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
 use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 
 trait ParsesTextResponses
@@ -84,17 +85,22 @@ trait ParsesTextResponses
             $toolCall['id'] ?? null,
         ), $rawToolCalls);
 
-        $providerContentBlocks = $this->extractProviderContentBlocks($message);
+        // Kimi K2.6 renamed `reasoning_content` to `reasoning`, and /compat has
+        // emitted both across model versions, so accept either. Replay blocks
+        // carry the reasoning so the loop sends it back as `reasoning_content`
+        // on the tool-call follow-up. Reasoning models lose multi-turn
+        // coherence without it.
+        $reasoning = (string) ($message['reasoning_content'] ?? $message['reasoning'] ?? '');
 
-        return $this->withReasoning(new StepResponse(
-            text: $text,
-            toolCalls: $mappedToolCalls,
-            finishReason: $finishReason,
-            usage: $usage,
-            meta: new Meta($provider->name(), $model),
-            structured: $structured ? $this->decodeStructuredOutput($text) : null,
-            providerContentBlocks: $providerContentBlocks,
-        ), $providerContentBlocks['reasoning_content'] ?? '');
+        return $this->withReasoning(new StepResponse(...[
+            'text' => $text,
+            'toolCalls' => $mappedToolCalls,
+            'finishReason' => $finishReason,
+            'usage' => $usage,
+            'meta' => new Meta($provider->name(), $model),
+            'structured' => $structured ? $this->decodeStructuredOutput($text) : null,
+            SdkCompat::replayBlocksKey() => SdkCompat::replayBlocks($reasoning),
+        ]), $reasoning);
     }
 
     /**
@@ -102,7 +108,7 @@ trait ParsesTextResponses
      *
      * laravel/ai 1.x added `StepResponse::$reasoning` (PR #975) so the
      * chain of thought reaches the agent response and the conversation
-     * store instead of living only in `providerContentBlocks`. Versions
+     * store instead of living only in the replay blocks. Versions
      * before 1.x have no such property, and passing it as a constructor
      * argument there is a fatal error, so it is assigned only when present.
      */
@@ -113,31 +119,6 @@ trait ParsesTextResponses
         }
 
         return $step;
-    }
-
-    /**
-     * Capture reasoning into providerContentBlocks so the core loop replays it
-     * on the tool-call follow-up (the loop passes these blocks into the next
-     * step's AssistantMessage, and MapsMessages::mapAssistantMessage emits them
-     * as `reasoning_content`). Reasoning models (Kimi K2.5/K2.6, Gemma 4, QwQ
-     * on Workers AI; DeepSeek upstream) lose multi-turn coherence if the
-     * thinking that led to the first tool call isn't replayed on the next
-     * request.
-     *
-     * Kimi K2.6 renamed the response field from `reasoning_content` to
-     * `reasoning`; Cloudflare's /compat layer has emitted both across model
-     * versions, so accept either and normalize to the canonical
-     * `reasoning_content` key. This mirrors the streaming path
-     * (HandlesTextStreaming reads `reasoning_content ?? reasoning ?? thinking`).
-     *
-     * @param  array<string, mixed>  $message
-     * @return array<string, mixed>
-     */
-    protected function extractProviderContentBlocks(array $message): array
-    {
-        $reasoning = $message['reasoning_content'] ?? $message['reasoning'] ?? null;
-
-        return filled($reasoning) ? ['reasoning_content' => $reasoning] : [];
     }
 
     /**
@@ -241,9 +222,9 @@ trait ParsesTextResponses
             provider: $provider->name(),
             model: $model,
             neurons: $neurons,
-            promptTokens: $usage->promptTokens,
-            completionTokens: $usage->completionTokens,
-            reasoningTokens: $usage->reasoningTokens,
+            promptTokens: SdkCompat::promptTokens($usage),
+            completionTokens: SdkCompat::completionTokens($usage),
+            reasoningTokens: SdkCompat::reasoningTokens($usage),
         ));
     }
 
@@ -256,15 +237,7 @@ trait ParsesTextResponses
      */
     protected function extractUsage(array $data): Usage
     {
-        $usage = $data['usage'] ?? [];
-
-        return new Usage(
-            promptTokens: UsageTokens::promptTokens($usage),
-            completionTokens: UsageTokens::completionTokens($usage),
-            cacheWriteInputTokens: 0,
-            cacheReadInputTokens: UsageTokens::cachedTokens($usage) ?? 0,
-            reasoningTokens: UsageTokens::reasoningTokens($usage) ?? 0,
-        );
+        return SdkCompat::textUsage($data['usage'] ?? []);
     }
 
     /**

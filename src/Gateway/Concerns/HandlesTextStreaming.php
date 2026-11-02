@@ -20,6 +20,7 @@ use Laravel\Ai\Streaming\Events\TextEnd;
 use Laravel\Ai\Streaming\Events\TextStart;
 use Laravel\Ai\Streaming\Events\ToolCall as ToolCallEvent;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Meirdick\WorkersAi\Cloudflare\StreamToolCallAccumulator;
 use Meirdick\WorkersAi\Cloudflare\ToolCallList;
 use Meirdick\WorkersAi\Cloudflare\UsageTokens;
@@ -34,7 +35,7 @@ trait HandlesTextStreaming
      * follow-up request, cross-step usage accumulation, and the final
      * StreamEnd event are all owned by the core TextGenerationLoop. The step
      * returns a StepResponse whose usage the loop sums and whose
-     * providerContentBlocks (captured reasoning) the loop replays into the
+     * replay blocks (captured reasoning) the loop replays into the
      * follow-up turn's assistant message.
      *
      * @return Generator<int, \Laravel\Ai\Streaming\Events\StreamEvent, mixed, StepResponse|null>
@@ -209,22 +210,20 @@ trait HandlesTextStreaming
             }
         }
 
-        $stepUsage = $usage ?? new Usage(0, 0);
+        $stepUsage = $usage ?? SdkCompat::emptyTextUsage();
 
         // Workers AI reports `length` accurately on the streamed finish chunk
         // just as it does on the non-streaming path (re-measured 2026-09-09),
         // so the reason is mapped as sent. The v0.6.1 completion-token
         // heuristic is gone — see ParsesTextResponses::extractFinishReason.
-        return $this->withReasoning(new StepResponse(
-            text: $currentText,
-            toolCalls: $toolCalls,
-            finishReason: $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
-            usage: $stepUsage,
-            meta: new Meta($provider->name(), $responseModel),
-            providerContentBlocks: filled($currentReasoning)
-                ? ['reasoning_content' => $currentReasoning]
-                : [],
-        ), $currentReasoning);
+        return $this->withReasoning(new StepResponse(...[
+            'text' => $currentText,
+            'toolCalls' => $toolCalls,
+            'finishReason' => $this->extractFinishReason(['finish_reason' => $finishReason ?? '']),
+            'usage' => $stepUsage,
+            'meta' => new Meta($provider->name(), $responseModel),
+            SdkCompat::replayBlocksKey() => SdkCompat::replayBlocks((string) $currentReasoning),
+        ]), (string) $currentReasoning);
     }
 
     /**
@@ -246,10 +245,10 @@ trait HandlesTextStreaming
             return $incoming;
         }
 
-        $incomingIsEmpty = $incoming->promptTokens === 0
-            && $incoming->completionTokens === 0
-            && $incoming->reasoningTokens === 0
-            && $incoming->cacheReadInputTokens === 0;
+        $incomingIsEmpty = SdkCompat::promptTokens($incoming) === 0
+            && SdkCompat::completionTokens($incoming) === 0
+            && SdkCompat::reasoningTokens($incoming) === 0
+            && SdkCompat::cacheReadTokens($incoming) === 0;
 
         return $incomingIsEmpty ? $current : $incoming;
     }
@@ -262,13 +261,7 @@ trait HandlesTextStreaming
      */
     protected function buildStreamUsage(array $usage): Usage
     {
-        return new Usage(
-            promptTokens: UsageTokens::promptTokens($usage),
-            completionTokens: UsageTokens::completionTokens($usage),
-            cacheWriteInputTokens: 0,
-            cacheReadInputTokens: UsageTokens::cachedTokens($usage) ?? 0,
-            reasoningTokens: UsageTokens::reasoningTokens($usage) ?? 0,
-        );
+        return SdkCompat::textUsage($usage);
     }
 
     /**

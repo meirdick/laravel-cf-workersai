@@ -33,7 +33,7 @@ test('embeddings response is correctly parsed', function () {
 
     expect($response->embeddings)->toHaveCount(1)
         ->and($response->embeddings[0])->toHaveCount(3)
-        ->and($response->tokens)->toBe(10)
+        ->and(isset($response->usage) ? $response->usage->inputTokens : $response->tokens)->toBe(10)
         ->and($response->meta->provider)->toBe('workersai');
 });
 

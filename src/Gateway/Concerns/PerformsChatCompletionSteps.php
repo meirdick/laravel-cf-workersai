@@ -8,6 +8,7 @@ use Laravel\Ai\Gateway\StepContext;
 use Laravel\Ai\Gateway\StepResponse;
 use Laravel\Ai\Gateway\TextGenerationOptions;
 use Laravel\Ai\Responses\Data\FinishReason;
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
 use Meirdick\WorkersAi\Exceptions\EmptyResponseException;
 use Meirdick\WorkersAi\Exceptions\TruncatedResponseException;
 use Meirdick\WorkersAi\Providers\WorkersAiProvider;
@@ -100,13 +101,13 @@ trait PerformsChatCompletionSteps
             throw EmptyResponseException::forStep(
                 $body['model'] ?? null,
                 $result->finishReason->value,
-                $result->usage->reasoningTokens,
+                SdkCompat::reasoningTokens($result->usage),
             );
         }
 
         if ($result->finishReason === FinishReason::Length && $provider->throwOnTruncation()) {
             throw TruncatedResponseException::forStep(
-                $result->usage->completionTokens,
+                SdkCompat::completionTokens($result->usage),
                 $body['max_completion_tokens'] ?? null,
                 $body['model'] ?? null,
             );

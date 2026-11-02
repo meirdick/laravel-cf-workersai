@@ -129,3 +129,9 @@ function configureLiveProvider(array $overrides = []): void
         ...$overrides,
     ]]);
 }
+
+/** True when the installed laravel/ai is the 1.x line (it has `TextUsage`). */
+function laravelAiIsV1(): bool
+{
+    return class_exists(\Laravel\Ai\Responses\Data\TextUsage::class);
+}

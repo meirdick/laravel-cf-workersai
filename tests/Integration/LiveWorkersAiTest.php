@@ -1,5 +1,7 @@
 <?php
 
+use Meirdick\WorkersAi\Cloudflare\SdkCompat;
+
 /*
 |--------------------------------------------------------------------------
 | Live end-to-end tests against the real Workers AI API
@@ -36,8 +38,8 @@ describe('direct Workers AI API', function () {
 
         expect($response->text)->not->toBe('')
             ->and(strtolower($response->text))->toContain('pong')
-            ->and($response->usage->promptTokens)->toBeGreaterThan(0)
-            ->and($response->usage->completionTokens)->toBeGreaterThan(0);
+            ->and(SdkCompat::promptTokens($response->usage))->toBeGreaterThan(0)
+            ->and(SdkCompat::completionTokens($response->usage))->toBeGreaterThan(0);
     });
 
     test('streaming yields deltas and a usage-bearing StreamEnd', function () {
@@ -52,7 +54,7 @@ describe('direct Workers AI API', function () {
 
         expect($deltas)->not->toBeEmpty()
             ->and($ends)->toHaveCount(1)
-            ->and($ends[0]->usage->promptTokens)->toBeGreaterThan(0);
+            ->and(SdkCompat::promptTokens($ends[0]->usage))->toBeGreaterThan(0);
     });
 
     test('embeddings return vectors', function () {
