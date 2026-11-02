@@ -23,6 +23,8 @@ The package retries a request when it fails in a way that can pass on a second t
 
 Backoff is 500 ms, 1 s, 2 s and so on, up to 20 s. If the response has a `Retry-After` header, the package waits that long, up to 20 s. It reads both seconds and HTTP-date values.
 
+On `laravel/ai` 1.2.1 and later, Laravel AI has its own retry for a short `Retry-After`. The package turns that retry off. A persistent 429 makes 3 attempts in total, not 6.
+
 ## Retry settings
 
 ```php

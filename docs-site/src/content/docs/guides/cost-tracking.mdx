@@ -7,7 +7,7 @@ sidebar:
 
 Cloudflare bills Workers AI in neurons, not tokens. Every endpoint shape returns a neuron count in `usage.neurons`. A cost model based on token counts alone gives the wrong number.
 
-The Laravel AI `Usage` and `Meta` objects have no field for neurons. The package gives you two ways to read them.
+The Laravel AI usage objects (`Usage`, `TextUsage`) and `Meta` have no field for neurons. The package gives you two ways to read them.
 
 ## Listen for the event
 
@@ -29,7 +29,7 @@ The event has these public properties:
 | `provider` | `string` | The provider name from your config. |
 | `model` | `string` | The model name sent to Cloudflare. On `/compat` it has the `workers-ai/` prefix. |
 | `neurons` | `float` | The neuron count for this call. |
-| `promptTokens` | `int` | Uncached prompt tokens. |
+| `promptTokens` | `int` | Uncached prompt tokens, on both `laravel/ai` lines. |
 | `completionTokens` | `int` | Completion tokens. |
 | `reasoningTokens` | `int` | Reasoning tokens. |
 
@@ -51,6 +51,24 @@ $latency = $response->raw?->transferStats?->getTransferTime();
 ```
 
 This needs a `laravel/ai` version where `StepResponse` has `withRawResponse()`. On `laravel/ai` 0.9, `raw` is `null`. Use the event there.
+
+## Token counts by `laravel/ai` line
+
+The usage object on the response differs by version. The event does not.
+
+```php
+// laravel/ai 0.9 to 0.11: promptTokens excludes cached tokens
+$response->usage->promptTokens;
+$response->usage->completionTokens;
+$response->usage->cacheReadInputTokens;
+
+// laravel/ai 1.x: inputTokens includes cached tokens
+$response->usage->inputTokens;
+$response->usage->outputTokens;
+$response->usage->cacheReadInputTokens; // null when absent
+```
+
+See [AI Gateway](/guides/ai-gateway/) for a measured example.
 
 ## Order of magnitude
 

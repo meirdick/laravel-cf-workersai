@@ -86,18 +86,30 @@ Related requests then reach the same cache shard. This helps the model prefix ca
 
 Some models cache the start of a prompt. Cloudflare reports the cached count in `usage.prompt_tokens_details.cached_tokens`.
 
-The package maps the counts like this:
+The two `laravel/ai` lines count differently:
 
-- `Usage::$cacheReadInputTokens` is the cached count.
-- `Usage::$promptTokens` is the uncached count.
-- The two add up to the `prompt_tokens` that Cloudflare reports.
+- **`laravel/ai` 0.9 to 0.11.** `Usage::$promptTokens` is the uncached count. `Usage::$cacheReadInputTokens` is the cached count. The two add up to the `prompt_tokens` that Cloudflare reports.
+- **`laravel/ai` 1.x.** The package returns `TextUsage`. `inputTokens` is the `prompt_tokens` that Cloudflare reports, with cached tokens included. `cacheReadInputTokens` is the cached part of it. It is `null` when the response has no cache field. `outputTokens` is the completion count.
+
+`WorkersAiUsageReported::$promptTokens` is the uncached count on both lines.
+
+```php
+// laravel/ai 0.9 to 0.11
+$uncached = $response->usage->promptTokens;
+$cached   = $response->usage->cacheReadInputTokens;
+
+// laravel/ai 1.x
+$total    = $response->usage->inputTokens;
+$cached   = $response->usage->cacheReadInputTokens ?? 0;
+$uncached = $total - $cached;
+```
 
 The maintainer measured two identical calls on `@cf/zai-org/glm-5.3-flash` under one `x-session-affinity` value on 2026-09-16:
 
-| Call | Wire `prompt_tokens` | Wire `cached_tokens` | `promptTokens` | `cacheReadInputTokens` | Neurons |
-| --- | --- | --- | --- | --- | --- |
-| 1 | 1221 | 0 | 1221 | 0 | 17.8 |
-| 2 | 1221 | 1216 | 5 | 1216 | 8.3 |
+| Call | Wire `prompt_tokens` | Wire `cached_tokens` | 0.x `promptTokens` | 1.x `inputTokens` | `cacheReadInputTokens` | Neurons |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 1221 | 0 | 1221 | 1221 | 0 | 17.8 |
+| 2 | 1221 | 1216 | 5 | 1221 | 1216 | 8.3 |
 
 The cache depends on the model. `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache in tests. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
 
@@ -109,7 +121,7 @@ The cache depends on the model. `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/
 
 ## Custom headers
 
-The package sends the `headers` array from the provider config. A configured header replaces a package header with the same name. Names match without regard to case.
+The package sends the `headers` array from the provider config. A configured header replaces a package header with the same name. Names match without regard to case. The package sends these headers on chat, streaming and embeddings.
 
 ```php
 'workers-ai' => [
@@ -117,6 +129,8 @@ The package sends the `headers` array from the provider config. A configured hea
     'headers' => ['X-Trace-Id' => env('TRACE_ID')],
 ],
 ```
+
+On `laravel/ai` 1.x, `Provider::withHeaders()` writes to the same array, so per-call headers reach Workers AI. Before version 1.0.0, the package dropped the `headers` key and per-call headers.
 
 ## Logging
 

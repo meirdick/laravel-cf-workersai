@@ -1,8 +1,21 @@
 ---
 title: Changelog
-description: Where to find release notes for laravel-cf-workersai.
+description: Release notes for laravel-cf-workersai, with the summary of version 1.0.0.
 sidebar:
   order: 90
 ---
 
-Release notes are in [CHANGELOG.md](https://github.com/meirdick/laravel-cf-workersai/blob/main/CHANGELOG.md) in the repository. The format follows Keep a Changelog. The package follows Semantic Versioning.
+Full release notes are in [CHANGELOG.md](https://github.com/meirdick/laravel-cf-workersai/blob/main/CHANGELOG.md) in the repository. The format follows Keep a Changelog. The package follows Semantic Versioning.
+
+## 1.0.0 (2026-11-02)
+
+First stable release. One codebase supports `laravel/ai` 0.9 to 1.3.
+
+- Adds `laravel/ai` 1.x support (`^1.0`, tested on v1.0.0 and v1.3.0).
+- Sends the `headers` config key and, on 1.x, `Provider::withHeaders()` headers. Before 1.0.0 they were dropped.
+- Fills `StepResponse::$reasoning` on 1.x.
+- On 0.9 to 0.11, `Usage::$promptTokens` excludes cached tokens. On 1.x, `TextUsage::$inputTokens` includes them. `WorkersAiUsageReported::$promptTokens` is uncached on both.
+- Fixes 6 attempts on a persistent 429 with `laravel/ai` 1.2.1 and later. The total is 3 again.
+- Reads `reasoning_tokens` from `completion_tokens_details` too.
+
+Upgrading from 0.8.x? See [Upgrade to 1.0](/guides/upgrade/).

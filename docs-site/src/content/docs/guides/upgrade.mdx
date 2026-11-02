@@ -1,0 +1,45 @@
+---
+title: Upgrade to 1.0
+description: Move from package version 0.8.x to 1.0, and check the two behavior changes.
+sidebar:
+  order: 13
+---
+
+Version 1.0.0 is the first stable release. It supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase.
+
+## From 0.8.x
+
+Run:
+
+```bash
+composer require "meirdick/laravel-cf-workersai:^1.0" -W
+```
+
+You do not change your config. Check these two things.
+
+### Cached token counts
+
+If you read token counts from the usage object, check your code.
+
+- On `laravel/ai` 0.9 to 0.11, `Usage::$promptTokens` now excludes cached tokens.
+- On `laravel/ai` 1.x, `TextUsage::$inputTokens` includes cached tokens. `cacheReadInputTokens` is the cached part.
+
+`WorkersAiUsageReported::$promptTokens` is the uncached count on both lines. See [Cost tracking](/guides/cost-tracking/).
+
+### Headers
+
+The package now sends the `headers` key from the provider config. On `laravel/ai` 1.x it also sends headers set with `Provider::withHeaders()`. Before 1.0.0 the package dropped them. Check that your configured headers are headers you want to send. See [AI Gateway](/guides/ai-gateway/).
+
+## From 0.6.x or earlier
+
+If you use `account_id` with `gateway`, requests moved to the `/compat` path in 0.7.0. Also, `throw_on_empty_response` is on by default, and `#[UseCheapestModel]` points to a new model. See [How it works](/concepts/how-it-works/) and [Configuration](/reference/configuration/).
+
+## From 0.5.x or earlier
+
+Update `laravel/ai` in the same command:
+
+```bash
+composer require "laravel/ai:^1.0" "meirdick/laravel-cf-workersai:^1.0" -W
+```
+
+See [Troubleshooting](/troubleshooting/) for two errors you can see after this upgrade. The `laravel/ai` database schema changed between 0.9 and 0.11. Your own `php` constraint in `composer.json` must be `^8.3`.

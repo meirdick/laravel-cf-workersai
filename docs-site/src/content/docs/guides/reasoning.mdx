@@ -119,4 +119,4 @@ The package then throws `TruncatedResponseException` on any step that ends with 
 | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `reasoning`, always `null` |
 | `@cf/qwen/qwq-32b` | None. Reasoning is inside `content`. |
 
-The package reads all of these keys.
+The package reads all of these keys. On `laravel/ai` 1.x, it also fills `StepResponse::$reasoning`. The package replays reasoning text between tool-call turns on both `laravel/ai` lines. You do not handle this.

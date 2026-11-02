@@ -41,14 +41,13 @@ The package does not keep a list of models. You give the model name, and Cloudfl
 
 ## Laravel AI versions
 
-| `laravel/ai` | Package version |
-| --- | --- |
-| `^0.7`, `^0.8` | `^0.5` |
-| `^0.9` | `^0.8` |
-| `^0.10` | `^0.8` |
-| `^0.11` | `^0.8` |
+| `laravel/ai` | Package version | Notes |
+| --- | --- | --- |
+| `^0.7`, `^0.8` | `^0.5` | |
+| `0.9` to `0.11` | `^1.0` | `Usage::$promptTokens` excludes cached tokens. |
+| `1.0` to `1.3` | `^1.0` | `TextUsage::$inputTokens` includes cached tokens. |
 
-`laravel/ai` 1.x is not supported. Package version `^0.8` requires `laravel/ai` `^0.9 || ^0.10 || ^0.11`.
+Package `^1.0` supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. It is tested on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. See [Cost tracking](/guides/cost-tracking/) for the token count difference.
 
 Some features depend on the `laravel/ai` version:
 
@@ -57,3 +56,5 @@ Some features depend on the `laravel/ai` version:
 | `StepResponse::$raw` (`$response->raw`) | A `laravel/ai` version after 0.9. |
 | `ProviderConnectionException` on timeout | `laravel/ai` 0.11 or later. |
 | `StreamErrorException` on stream error | `laravel/ai` 0.11 or later. |
+| `StepResponse::$reasoning` | `laravel/ai` 1.x. |
+| `Provider::withHeaders()` per-call headers | `laravel/ai` 1.x. |

@@ -37,4 +37,4 @@ On `laravel/ai` 0.11 and later, a stream that ends on an error event throws `Str
 
 ## Neuron events on streams
 
-The `WorkersAiUsageReported` event is not sent for streamed requests. The `StreamEnd` event carries the summed usage. See [Cost tracking](/guides/cost-tracking/).
+The `WorkersAiUsageReported` event is not sent for streamed requests. The `StreamEnd` event carries the summed usage. On `laravel/ai` 1.x, `StreamEnd::$usage` is a `TextUsage` with `inputTokens`. On 0.9 to 0.11, it is a `Usage` with `promptTokens`. See [Cost tracking](/guides/cost-tracking/).

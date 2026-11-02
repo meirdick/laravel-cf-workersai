@@ -14,7 +14,9 @@ $response = Embeddings::for(['hello', 'world'])
     ->generate(provider: 'workers-ai', model: '@cf/baai/bge-base-en-v1.5');
 
 $response->embeddings; // one vector per input
-$response->tokens;     // total tokens
+
+$response->tokens;                // laravel/ai 0.9 to 0.11: total tokens
+$response->usage->inputTokens;    // laravel/ai 1.x: total tokens
 ```
 
 Without `model:`, the package uses `@cf/baai/bge-large-en-v1.5`. Change the default with `models.embeddings.default`.

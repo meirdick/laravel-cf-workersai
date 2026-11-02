@@ -139,18 +139,18 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 
 ## Cost shows as zero
 
-**Cause.** You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, or on a streamed call.
+**Cause.** You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, or on a streamed call. On 1.x, the token counts differ from 0.x. See [Cost tracking](/guides/cost-tracking/).
 **Fix.** Listen for `WorkersAiUsageReported`. It covers non-streamed calls.
 
 ## Upgrade errors
 
 ### composer cannot resolve laravel/ai
 
-**Cause.** Your project requires `laravel/ai` `^0.7` or `^0.8`. Package version `^0.8` needs `laravel/ai` `^0.9` to `^0.11`.
+**Cause.** Your project requires `laravel/ai` `^0.7` or `^0.8`. Package `^1.0` needs `laravel/ai` `^0.9` to `^1.3`.
 **Fix.** Bump both packages in one command:
 
 ```bash
-composer require "laravel/ai:^0.11" "meirdick/laravel-cf-workersai:^0.8" -W
+composer require "laravel/ai:^1.0" "meirdick/laravel-cf-workersai:^1.0" -W
 ```
 
 ### table agent_conversations has no column named participant_type

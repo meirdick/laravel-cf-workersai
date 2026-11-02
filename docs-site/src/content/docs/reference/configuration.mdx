@@ -53,7 +53,7 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
 | `gateway_token` | string | none | Token for an AI Gateway with Authenticated Gateway on. Sent as `cf-aig-authorization: Bearer <token>`. |
 | `url` | string | none | Full endpoint URL. Do not set it with `account_id`. The package throws if both are set. |
 | `session_affinity` | string | none | Value for the `x-session-affinity` header. |
-| `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. |
+| `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. Also receives headers set with `Provider::withHeaders()` on `laravel/ai` 1.x. |
 
 The package resolves the endpoint in this order: `url`, then `account_id` with `gateway`, then `account_id` alone. See [How it works](/concepts/how-it-works/).
 
