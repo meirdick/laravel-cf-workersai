@@ -6,31 +6,36 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
-Ships as `dev-main` (branch alias `1.0.x-dev`) until laravel/ai tags 1.0; this package tags 1.0.0 then.
-
-Audit against laravel/ai's `1.x` branch (9de5156, 103 commits past v0.11.2, no 1.0 tag yet). Nothing this package works around is fixed upstream: the loop still never branches on `FinishReason::Length`, `reasoning_effort` still appears nowhere, `Usage` and `Meta` still have no extensible field, 429 is still not retried, and 408 still falls through as a raw `RequestException`. The existing suite passed unchanged on `1.x-dev`. What follows aligns the package with the upstream additions that do touch a gateway.
+Not tagged. This release adds laravel/ai 1.x support to the 0.x line in one codebase.
 
 ### Added
 
-- **`laravel/ai ^1.0` is allowed** and the CI matrix runs `1.x-dev` alongside `^0.9`, `^0.10` and `^0.11`.
-- **The `headers` connection key is honoured.** laravel/ai 0.10.3 gave every provider a `headers` array; 1.x's `Provider::withHeaders()` and the `ai_sdk_extra_headers` provider option write into it. This client never read it, so a configured header, and on 1.x every per-call header, was silently dropped. Configured headers now layer over the package's own with the same rule as laravel/ai's `CreatesClient`: case-insensitive names, last writer wins. Sent on chat, streaming and embeddings.
-- **`StepResponse::$reasoning` is filled** on laravel/ai 1.x (PR #975), on both the non-streaming and streaming paths, from the same field the package already replays as `reasoning_content`. Guarded by `property_exists()` so earlier versions are unaffected.
-- **Per-call provider options** from 1.x's `TextGenerationOptions::withProviderOptions()` reach the request body. No code change was needed; the package already reads `$options->providerOptions()`, which 1.x merges. Noted here so nobody goes looking.
+- **laravel/ai 1.x support (`^1.0`, tested on v1.0.0 and v1.3.0).** 1.x changed shapes the gateway builds and reads. `src/Cloudflare/SdkCompat.php` holds every 0.x/1.x difference:
+  - `Usage` became `TextUsage(inputTokens, outputTokens, cacheRead, cacheWrite, reasoning)`. On 1.x the package returns it. `inputTokens` is the wire `prompt_tokens`, cached tokens included. `cacheReadInputTokens` is the cached part, or `null` when the response has no cache field.
+  - `providerContentBlocks` became `replayBlocks` on `StepResponse` and `AssistantMessage`. Reasoning replays on both.
+  - `EmbeddingsResponse` takes a `Usage`, not an int.
+- **The `headers` connection key is honoured.** laravel/ai 0.10.3 gave every provider a `headers` array. 1.x's `Provider::withHeaders()` writes into it. This client never read it, so a configured header, and on 1.x every per-call header, was silently dropped. Configured headers now layer over the package's own with the same rule as laravel/ai's `CreatesClient`: case-insensitive names, last writer wins. Sent on chat, streaming and embeddings.
+- **`StepResponse::$reasoning` is filled** on laravel/ai 1.x (PR #975), on both the non-streaming and streaming paths. Guarded by `property_exists()`.
+- **Per-call provider options** from 1.x's `TextGenerationOptions::withProviderOptions()` reach the request body. The package already read `$options->providerOptions()`, which 1.x merges.
+- **`SdkVersionTest`** pins the 0.x/1.x differences. CI runs laravel/ai `^0.9`, `^0.10`, `^0.11`, `^1.0` and `^1.3`.
 
 ### Changed
 
-- **`Usage::$promptTokens` now excludes cached tokens.** laravel/ai 0.11.1 redefined the field on every OpenAI-shaped provider as the uncached count, with `cacheReadInputTokens` holding the cached remainder (laravel/ai#909, #924). The package reported the wire `prompt_tokens` unchanged, so a consumer switching from the built-in driver saw prompt counts jump by the cache hit. The split now matches on every supported laravel/ai version, clamped at zero. `UsageTokens::rawPromptTokens()` returns the wire figure, and `WorkersAiUsageReported::$promptTokens` follows `Usage`. Measured 2026-09-16 on the direct API: `@cf/zai-org/glm-5.3-flash` reported `prompt_tokens: 1221` on both of two identical calls under one `x-session-affinity`, with `cached_tokens` 0 then 1216, so the wire count includes the cached tokens and the subtraction is right. The package reported 1221/0 then 5/1216. Neurons fell 17.8 → 8.3 on the hit; `@cf/moonshotai/kimi-k2.6` fell 116 → 41. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` never reported a cache hit.
-- **Array tool results are encoded with `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`**, matching laravel/ai 1.x's `ToolResult::text()` (PR #997), which is used directly where it exists. A model no longer reads `https:\/\/` inside a replayed MCP result.
+- **Prompt-token meaning depends on the laravel/ai line.** On 0.9 to 0.11, `Usage::$promptTokens` excludes cached tokens, as laravel/ai 0.11.1 defined it for OpenAI-shaped providers (#909, #924), clamped at zero. On 1.x, `TextUsage::$inputTokens` includes them. `UsageTokens::rawPromptTokens()` returns the wire figure. `WorkersAiUsageReported::$promptTokens` is the uncached count on both lines. Measured 2026-09-16 on the direct API: `@cf/zai-org/glm-5.3-flash` reported `prompt_tokens: 1221` on two identical calls under one `x-session-affinity`, with `cached_tokens` 0 then 1216. Neurons fell 17.8 to 8.3 on the hit.
+- **Array tool results are encoded with `JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE`**, matching laravel/ai 1.x's `ToolResult::text()` (PR #997). A model no longer reads `https:\/\/` inside a replayed MCP result.
 - **`reasoning_tokens` is also read from `completion_tokens_details`**, where laravel/ai's OpenAI-compatible gateway reads it. The top-level key still wins.
 
 ### Fixed
 
-- **Two stale live-stress expectations.** `reasoning model with tight budget is flagged` asserted empty text plus `Length`; since 0.7.0 the package throws `EmptyResponseException` instead, which is the flag. `a transfer timeout fails fast` caught only Illuminate's `ConnectionException`; laravel/ai 0.11 rethrows it as `ProviderConnectionException`. Both tests are skipped without `WORKERS_AI_E2E_STRESS=1`, so CI never saw them. Live sweep 2026-09-16: 36 passed.
+- **A persistent 429 made 6 attempts on laravel/ai 1.2.1 and later.** 1.2.1 (#1112) retries once more on a short `Retry-After`. That stacked on the package's own 3 attempts. `WorkersAiGateway::retryAfterSeconds()` now returns `null`, so the total stays 3.
+- **Two stale live-stress expectations.** `reasoning model with tight budget is flagged` asserted empty text plus `Length`. Since 0.7.0 the package throws `EmptyResponseException` instead. `a transfer timeout fails fast` caught only Illuminate's `ConnectionException`. laravel/ai 0.11 rethrows it as `ProviderConnectionException`. Both tests skip without `WORKERS_AI_E2E_STRESS=1`.
+- **README:** the `config/ai.php` example lacked `'driver' => 'workers-ai'`, which makes laravel/ai throw `Undefined array key "driver"`. The `url` comment said it overrides both `account_id` and `gateway`. `url` with `account_id` throws.
 
 ### Verified
 
-- Live, 2026-09-16, on the direct API and an AI Gateway: 7 integration tests and the 36-test stress sweep pass. The `headers` key reached Cloudflare, and the cached-token split was checked through the package (5 uncached / 1216 cached against wire `prompt_tokens: 1221`).
-- laravel/ai v0.9.1: 200 passed, 49 skipped. v0.10.3: 203 passed, 46 skipped. v0.11.2: 203 passed, 46 skipped. `1.x-dev` at 9de5156: 206 passed, 43 skipped.
+- laravel/ai v0.9.1: 205 passed, 53 skipped. v0.10.3: 208 passed, 50 skipped. v0.11.2: 208 passed, 50 skipped. v1.0.0: 213 passed, 45 skipped. v1.3.0: 213 passed, 45 skipped.
+- Live, direct API, 2026-11-02: 4 integration tests pass on v1.3.0 and v0.11.2. The AI Gateway and stress tests were not run.
+- Live, 2026-09-16, on the direct API and an AI Gateway: 7 integration tests and the 36-test stress sweep pass.
 
 ## [0.8.2] - 2026-09-09
 

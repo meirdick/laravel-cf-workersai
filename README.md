@@ -21,7 +21,13 @@ What it does:
 ## Requirements
 
 - PHP `^8.3`
-- `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0`. Tested against v0.9.1, v0.10.3, v0.11.2 and the `1.x` branch at 9de5156.
+- `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0`. Tested against v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0.
+
+| laravel/ai | Status | Notes |
+|---|---|---|
+| `^0.7`, `^0.8` | Use this package `^0.5` | |
+| `0.9` to `0.11` | Supported | `Usage::$promptTokens` is net of cache. |
+| `1.0` to `1.3` | Supported | `TextUsage::$inputTokens` includes cached tokens. See [Token counts](#token-counts). |
 
 For `laravel/ai ^0.7 || ^0.8`, use `meirdick/laravel-cf-workersai ^0.5`.
 
@@ -55,10 +61,11 @@ Add a `workers-ai` provider to `config/ai.php`:
 ```php
 'providers' => [
     'workers-ai' => [
+        'driver'              => 'workers-ai',
         'key'                 => env('CLOUDFLARE_AI_API_TOKEN'),
         'account_id'          => env('CLOUDFLARE_ACCOUNT_ID'),
         'gateway'             => env('CLOUDFLARE_AI_GATEWAY'),  // optional
-        // 'url'              => env('CLOUDFLARE_AI_URL'),      // optional, overrides both
+        // 'url'              => env('CLOUDFLARE_AI_URL'),      // optional, replaces account_id and gateway
         // 'default_max_tokens' => 4096,                        // package default
     ],
 ],
@@ -78,9 +85,9 @@ The 256 cap does not apply to every model. `@cf/zai-org/glm-5.3-flash` with no c
 
 ### Endpoint resolution
 
-Three config shapes, in priority order:
+Three config shapes. `url` and `account_id` cannot both be set. The package throws `InvalidArgumentException` if they are.
 
-1. `url`. All requests go to this URL. Use it for a `/compat` URL or a self-hosted gateway.
+1. `url` alone. All requests go to this URL. Use it for a `/compat` URL or a self-hosted gateway.
 2. `account_id` + `gateway`. Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat/...`. You get AI Gateway caching, retries, cost tracking and request logs.
 3. `account_id` only. Requests go to the direct Workers AI API at `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1/...`.
 
@@ -206,14 +213,19 @@ $latency = $response->raw?->transferStats?->getTransferTime();
 
 ### Token counts
 
-`Usage::$promptTokens` is the uncached prompt count. `Usage::$cacheReadInputTokens` is the cached count. The two add up to the wire `prompt_tokens`. laravel/ai 0.11.1 adopted this split for every OpenAI-shaped provider. The package applies it on every laravel/ai version it supports.
+The two laravel/ai lines count differently.
+
+- **laravel/ai 0.9 to 0.11.** `Usage::$promptTokens` is the uncached prompt count. `Usage::$cacheReadInputTokens` is the cached count. The two add up to the wire `prompt_tokens`.
+- **laravel/ai 1.x.** The package returns `TextUsage`. `inputTokens` is the wire `prompt_tokens`, cached tokens included. `cacheReadInputTokens` is the cached part of it, or `null` when the response has no cache field. `outputTokens` is `completion_tokens`.
+
+`WorkersAiUsageReported::$promptTokens` is the uncached count on both lines.
 
 Measured 2026-09-16 on `@cf/zai-org/glm-5.3-flash`, two identical calls under one `x-session-affinity`:
 
-| Call | Wire `prompt_tokens` | Wire `cached_tokens` | `promptTokens` | `cacheReadInputTokens` | Neurons |
-|---|---|---|---|---|---|
-| 1 | 1221 | 0 | 1221 | 0 | 17.8 |
-| 2 | 1221 | 1216 | 5 | 1216 | 8.3 |
+| Call | Wire `prompt_tokens` | Wire `cached_tokens` | 0.x `promptTokens` | 1.x `inputTokens` | `cacheReadInputTokens` | Neurons |
+|---|---|---|---|---|---|---|
+| 1 | 1221 | 0 | 1221 | 1221 | 0 | 17.8 |
+| 2 | 1221 | 1216 | 5 | 1221 | 1216 | 8.3 |
 
 The prefix cache is model-specific. `glm-5.3-flash` and `kimi-k2.6` hit. `llama-3.3-70b`, `llama-4-scout` and `gpt-oss-120b` did not hit in any test.
 
@@ -228,7 +240,7 @@ The package sends the `headers` array from the provider config. Every first-part
 ],
 ```
 
-On laravel/ai 1.x, the `ai_sdk_extra_headers` provider option and `Provider::withHeaders()` write to the same array. Per-call headers reach Workers AI.
+On laravel/ai 1.x, `Provider::withHeaders()` writes to the same array. Per-call headers reach Workers AI.
 
 ## Quickstart
 
@@ -421,6 +433,8 @@ Since 0.8.0 the package throws `Meirdick\WorkersAi\Exceptions\GatewayTimeoutExce
 
 Since 0.8.0 the package retries a 429 with exponential backoff. It reads a `Retry-After` header in both forms, delay-seconds and HTTP-date. After the last attempt it throws `RateLimitedException` for failover.
 
+laravel/ai 1.2.1 added its own retry for a short `Retry-After`. The package turns that off in its gateway, so a persistent 429 makes 3 attempts and not 6.
+
 ```php
 'workers-ai' => [
     // ...
@@ -512,7 +526,7 @@ Two things to expect. Neither is caused by this package:
 
 This package follows [Semantic Versioning](https://semver.org/).
 
-- `laravel/ai ^1.0` support is on `main`. The branch alias is `1.0.x-dev`. Install with `"meirdick/laravel-cf-workersai": "1.0.x-dev"`. It tags as 1.0.0 when laravel/ai tags 1.0.
+- `main` supports `laravel/ai ^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. `src/Cloudflare/SdkCompat.php` holds every difference between the 0.x and 1.x shapes.
 - Version 0.6 and later need `laravel/ai ^0.9`, the single-step `StepTextGateway` contract.
 - Use `^0.5` of this package for `laravel/ai ^0.7 || ^0.8`.
 

@@ -280,6 +280,23 @@ None of §2, §6, §7, §8 or §11 is addressed upstream. What 1.x adds that tou
 
 Re-run the audit when 1.0 is tagged: `git diff 9de5156...v1.0.0 -- src/Contracts src/Gateway/StepResponse.php src/Gateway/TextGenerationOptions.php src/Gateway/TextGenerationLoop.php src/Gateway/OpenAiCompatible` in a laravel/ai checkout is the whole job.
 
+### v1.3.0 audit (2026-11-02)
+
+laravel/ai 1.0 to 1.3 is out. The 9de5156 audit above predicted none of the following breaks, and three of them break a gateway. All are handled in `src/Cloudflare/SdkCompat.php`, the one place that knows both shapes.
+
+| Upstream change | Package response |
+|---|---|
+| `Usage` split into `Usage(inputTokens, outputTokens)` and `TextUsage(inputTokens, outputTokens, cacheRead, cacheWrite, reasoning)`. `promptTokens` and `completionTokens` are gone. | `SdkCompat::textUsage()` builds `TextUsage` on 1.x and the old `Usage` on 0.x. Readers use `SdkCompat::promptTokens()` and friends. |
+| 1.x counts are inclusive: `inputTokens` is the wire `prompt_tokens`, cached included. | 1.x gets the wire figure. 0.x keeps the net-of-cache `promptTokens`. `WorkersAiUsageReported::$promptTokens` stays uncached on both. |
+| `providerContentBlocks` renamed `replayBlocks` on `StepResponse` and `AssistantMessage`. | `SdkCompat::replayBlocksKey()` picks the name. 1.x stores `[['type' => 'reasoning', 'reasoning_content' => ...]]`. MapsMessages reads either shape. |
+| `EmbeddingsResponse` takes a `Usage`, not an int. | `SdkCompat::embeddingsUsage()`. |
+| 1.2.1 (#1112): `HandlesFailoverErrors` retries once on a 429 or overloaded status with `Retry-After` of 10 or less. | `retryAfterSeconds()` returns `null` in `WorkersAiGateway`. Without it, the HTTP client's 3 attempts became 6. |
+| `ai_sdk_extra_headers` | Removed upstream in #1026, before 1.0. Earlier docs here named it. They no longer do. |
+
+Gateway contracts did not change. The suite passes on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. Live tests pass on v1.3.0 and v0.11.2 against the direct API. The AI Gateway live tests were not run: the `default` gateway is not reachable with the available token.
+
+Re-run this audit on each laravel/ai minor: diff `src/Gateway`, `src/Responses/Data` and `src/Responses/EmbeddingsResponse.php`.
+
 ## 13. Tests
 
 ```bash
@@ -309,12 +326,13 @@ vendor/bin/pest --filter='truncated'
 | `ErrorHandlingTest`, `RetryPolicyTest` | Cloudflare error envelopes, retry decisions, backoff and `Retry-After` parsing |
 | `ToolCallLoopTest`, `SubAgentTest` | Tool loop and `CanActAsTool` |
 | `CredentialsTest` | `key` / `api_key` resolution |
-| `HeadersTest` | The `headers` connection key on all three request paths, precedence over package headers, `Provider::withHeaders()` on 1.x |
+| `HeadersTest` | The `headers` connection key on all three request paths, precedence over package headers |
+| `SdkVersionTest` | 0.x/1.x differences: `TextUsage` counts, embeddings `Usage`, `replayBlocks`, and exactly 3 attempts on a persistent 429 or 503 |
 | `UsageMappingTest` | Cached-token subtraction on both paths, the zero clamp, `completion_tokens_details.reasoning_tokens` |
 
 `tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
 
-CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11` and `1.x-dev`. The `1.x-dev` jobs track an unreleased branch and may go red on an upstream change before this package does anything wrong; read the failure before reacting.
+CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11`, `^1.0` and `^1.3`. `SdkVersionTest` pins the shapes that differ between 0.x and 1.x. Each test skips on the other major.
 
 ## 14. Deliberately not handled
 
