@@ -13,3 +13,4 @@ composer.lock
 .env.local
 .env.testing
 .wrangler/
+.amp/portals/

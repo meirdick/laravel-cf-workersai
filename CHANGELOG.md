@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- **Clef classification.** `workers-ai` implements laravel/ai's `ClassificationProvider` on 1.0 and later, so `Classification::of()->classify(provider: 'workers-ai')` runs `@cf/cloudflare/clef`. `clef-flash` and `clef-omni` are the other two model IDs. The default is `models.classification.default`. Questions use the same `Boolean`, `Choice` and `Score` classes as Jev, because Clef accepts that wire format. Images go in Clef's `images` field, not inside the state. On 0.9 to 0.11 the classification API does not exist, and the provider stays a text and embeddings provider.
+- **Clairic extraction.** `Meirdick\WorkersAi\Extraction::of($text)->fields([...])->extract()` calls `@cf/cloudflare/clairic`. laravel/ai has no extraction API: Clairic returns a typed value per field, not a choice among options you list. Field classes are `Text`, `Number`, `DateField`, `ListField`, `Estimate` and `Forecast`. Works on every supported laravel/ai version.
+
+Both post to `POST /accounts/{account}/ai/run/{model}`, not to `/ai/v1` or `/compat`. A configured `gateway` is sent as `cf-aig-gateway-id`. A `/compat` `url` throws, because that path does not serve these models.
+
 ## [1.0.1] - 2026-11-02
 
 ### Fixed

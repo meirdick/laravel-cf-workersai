@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Nothing to reconnect. Tests are HTTP-faked and need no credentials.
+# Live Workers AI tests read WORKERS_AI_E2E_* from the environment when set.
+set -euo pipefail
+
+if ! command -v php >/dev/null 2>&1 || ! command -v composer >/dev/null 2>&1; then
+  printf 'php or composer missing; .agents/setup did not finish\n' >&2
+  exit 1
+fi

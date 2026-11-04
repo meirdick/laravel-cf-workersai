@@ -5,14 +5,21 @@ declare(strict_types=1);
 namespace Meirdick\WorkersAi\Providers;
 
 use Illuminate\Contracts\Events\Dispatcher;
+use Illuminate\Http\UploadedFile;
 use Laravel\Ai\Contracts\Gateway\EmbeddingGateway;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
 use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
 use Laravel\Ai\Contracts\Providers\TextProvider;
 use Laravel\Ai\Exceptions\AiException;
+use Laravel\Ai\Files\File;
 use Laravel\Ai\Providers\Provider;
 use Meirdick\WorkersAi\Attributes\ReasoningEffort;
+use Meirdick\WorkersAi\Cloudflare\ClairicModel;
+use Meirdick\WorkersAi\Cloudflare\ClefModel;
+use Meirdick\WorkersAi\Extraction\Field;
+use Meirdick\WorkersAi\Gateway\WorkersAiExtractionGateway;
 use Meirdick\WorkersAi\Gateway\WorkersAiGateway;
+use Meirdick\WorkersAi\Responses\ExtractionResponse;
 
 /**
  * Laravel AI provider for Cloudflare Workers AI.
@@ -33,6 +40,8 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     use \Laravel\Ai\Providers\Concerns\StreamsText;
 
     protected ?WorkersAiGateway $workersAiGateway = null;
+
+    protected ?WorkersAiExtractionGateway $extractionGateway = null;
 
     public function __construct(protected array $config, protected Dispatcher $events)
     {
@@ -94,6 +103,44 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
         return $this->embeddingGateway ??= $this->workersAiGateway();
     }
 
+    public function extractionGateway(): WorkersAiExtractionGateway
+    {
+        return $this->extractionGateway ??= new WorkersAiExtractionGateway($this->events);
+    }
+
+    /**
+     * Extract typed values from `$state` with Clairic.
+     *
+     * Clairic is not a classification model. It returns a value per field,
+     * or null when the input does not determine it. Prefer
+     * `Extraction::of($state)->fields(...)->extract()`; this is the method
+     * that call reaches.
+     *
+     * @param  array<string, Field>  $fields
+     * @param  array<string, mixed>  $providerOptions
+     * @param  array<int|string, File|UploadedFile>  $attachments
+     */
+    public function extract(
+        string $state,
+        array $fields,
+        ?string $model = null,
+        int $timeout = 30,
+        array $providerOptions = [],
+        array $attachments = [],
+        ?string $referenceDate = null,
+    ): ExtractionResponse {
+        return $this->extractionGateway()->extract(
+            $this,
+            $model ?? $this->defaultExtractionModel(),
+            $state,
+            $fields,
+            $timeout,
+            $providerOptions,
+            $attachments,
+            $referenceDate,
+        );
+    }
+
     public function defaultTextModel(): string
     {
         return $this->config['models']['text']['default'] ?? '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
@@ -120,6 +167,30 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     public function defaultEmbeddingsModel(): string
     {
         return $this->config['models']['embeddings']['default'] ?? '@cf/baai/bge-large-en-v1.5';
+    }
+
+    /**
+     * The Clef model `Classification::of()->classify()` uses when the call
+     * names no model. Override with `models.classification.default`.
+     * `models.classification.cheapest` is `@cf/cloudflare/clef-flash`.
+     */
+    public function defaultClassificationModel(): string
+    {
+        return $this->config['models']['classification']['default'] ?? ClefModel::DEFAULT;
+    }
+
+    public function cheapestClassificationModel(): string
+    {
+        return $this->config['models']['classification']['cheapest'] ?? ClefModel::CHEAPEST;
+    }
+
+    /**
+     * The Clairic model `Extraction::of()->extract()` uses when the call
+     * names no model. Override with `models.extraction.default`.
+     */
+    public function defaultExtractionModel(): string
+    {
+        return $this->config['models']['extraction']['default'] ?? ClairicModel::ID;
     }
 
     public function defaultEmbeddingsDimensions(): int

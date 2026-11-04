@@ -7,6 +7,8 @@ Docs: [laravel-cf-workersai-docs.mdick85.workers.dev/docs](https://laravel-cf-wo
 What it does:
 
 - Text generation, embeddings, structured output, tool calls, streaming.
+- Clef decisions through Laravel AI's classification API (`laravel/ai` 1.0 or later).
+- Clairic extraction through `Extraction::of()`.
 - Three endpoint shapes: the direct Workers AI API, an AI Gateway, or any `/compat` URL.
 - Replays reasoning text across tool-call turns.
 - `#[Strict]` JSON schema.

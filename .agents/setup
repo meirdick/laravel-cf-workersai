@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Installs the PHP toolchain and Composer dependencies for a fresh orb.
+# Idempotent: a second run skips apt and Composer when nothing changed.
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+step() {
+  local label="$1"
+  shift
+  local started
+  started="$(date +%s)"
+  printf '==> %s\n' "$label"
+  "$@"
+  printf '    %s took %ss\n' "$label" "$(( $(date +%s) - started ))"
+}
+
+php_ready() {
+  command -v php >/dev/null 2>&1 \
+    && php -r 'exit(PHP_VERSION_ID >= 80300 ? 0 : 1);' \
+    && php -m | grep -qx curl \
+    && php -m | grep -qx mbstring \
+    && php -m | grep -qx xml \
+    && php -m | grep -qi '^dom$' \
+    && php -m | grep -qx zip \
+    && command -v composer >/dev/null 2>&1
+}
+
+install_php() {
+  if php_ready; then
+    printf '    PHP %s and Composer already present\n' "$(php -r 'echo PHP_VERSION;')"
+    return
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  step "apt-get update" apt-get update -qq
+
+  if ! php_ready && ! apt-cache show php8.4-cli >/dev/null 2>&1; then
+    step "add sury php repository" bash -c '
+      apt-get install -y -qq lsb-release ca-certificates curl gnupg
+      curl -fsSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/deb.sury.org-php.gpg
+      echo "deb [signed-by=/usr/share/keyrings/deb.sury.org-php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/sury-php.list
+      apt-get update -qq
+    '
+  fi
+
+  step "install php and unzip" apt-get install -y -qq \
+    php-cli php-xml php-mbstring php-curl php-zip php-intl unzip
+
+  if ! command -v composer >/dev/null 2>&1; then
+    step "install composer" bash -c '
+      curl -fsSL https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer
+    '
+  fi
+}
+
+install_php
+
+# The package does not commit composer.lock. Composer resolves laravel/ai
+# from composer.json. --no-install is avoided so a warm vendor/ is reused.
+step "composer update" composer update --no-interaction --prefer-dist --no-progress

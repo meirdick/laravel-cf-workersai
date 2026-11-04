@@ -7,7 +7,7 @@ namespace Meirdick\WorkersAi;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Ai\AiManager;
-use Meirdick\WorkersAi\Providers\WorkersAiProvider;
+use Meirdick\WorkersAi\Providers\ClefClassification;
 
 class WorkersAiServiceProvider extends ServiceProvider
 {
@@ -18,7 +18,9 @@ class WorkersAiServiceProvider extends ServiceProvider
         }
 
         $this->app->afterResolving(AiManager::class, function (AiManager $manager) {
-            $creator = fn ($app, array $config) => new WorkersAiProvider(
+            $class = ClefClassification::providerClass();
+
+            $creator = fn ($app, array $config) => new $class(
                 $config,
                 $app->make(Dispatcher::class),
             );

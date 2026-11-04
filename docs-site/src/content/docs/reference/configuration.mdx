@@ -36,9 +36,15 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
                 'default'    => '@cf/baai/bge-large-en-v1.5',
                 'dimensions' => 1024,
             ],
+            'classification' => [
+                'default'  => '@cf/cloudflare/clef',
+                'cheapest' => '@cf/cloudflare/clef-flash',
+            ],
+            'extraction' => [
+                'default' => '@cf/cloudflare/clairic',
+            ],
         ],
     ],
-],
 ```
 
 ## Connection
@@ -69,6 +75,9 @@ The package resolves the endpoint in this order: `url`, then `account_id` with `
 | `models.text.smartest` | string | `@cf/moonshotai/kimi-k2.6` | Model for `#[UseSmartestModel]`. |
 | `models.embeddings.default` | string | `@cf/baai/bge-large-en-v1.5` | Default embedding model. |
 | `models.embeddings.dimensions` | int | `1024` | Dimensions reported to Laravel AI. Not sent to Cloudflare. |
+| `models.classification.default` | string | `@cf/cloudflare/clef` | Clef model for `Classification::of()->classify()` when the call names none. Needs `laravel/ai` 1.0 or later. |
+| `models.classification.cheapest` | string | `@cf/cloudflare/clef-flash` | Returned by `cheapestClassificationModel()`. Not selected automatically. |
+| `models.extraction.default` | string | `@cf/cloudflare/clairic` | Clairic model for `Extraction::of()->extract()` when the call names none. |
 
 ## Failure handling
 
