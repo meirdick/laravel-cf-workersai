@@ -60,6 +60,27 @@ test('a bare model id is prefixed automatically on the gateway /compat path', fu
     Http::assertSent(fn (Request $r) => json_decode($r->body(), true)['model'] === 'workers-ai/@cf/openai/gpt-oss-120b');
 });
 
+test('a third-party model on the gateway compat path is not prefixed', function () {
+    configureWorkersAiProvider(accountId: 'test-account-123', gateway: 'my-gateway');
+
+    Http::fake(['gateway.ai.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai', model: 'openai/gpt-6-luna');
+
+    Http::assertSent(fn (Request $r) => json_decode($r->body(), true)['model'] === 'openai/gpt-6-luna');
+});
+
+test('a third-party model on the direct API is rejected before a request', function () {
+    configureWorkersAiProvider(accountId: 'test-account-123');
+
+    Http::fake();
+
+    expect(fn () => agent()->prompt('Hello', provider: 'workersai', model: 'openai/gpt-6-luna'))
+        ->toThrow(\Laravel\Ai\Exceptions\AiException::class, 'not a Workers AI model');
+
+    Http::assertNothingSent();
+});
+
 test('an already-prefixed model id is not double-prefixed', function () {
     configureWorkersAiProvider(accountId: 'test-account-123', gateway: 'my-gateway');
 

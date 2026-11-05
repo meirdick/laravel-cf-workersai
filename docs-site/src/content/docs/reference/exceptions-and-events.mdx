@@ -45,7 +45,7 @@ These come from Laravel AI or PHP, not from the package:
 | Class | Purpose |
 | --- | --- |
 | `Meirdick\WorkersAi\WorkersAiServiceProvider` | Registers the driver. Laravel package discovery loads it. |
-| `Meirdick\WorkersAi\WorkersAiKey` | Constants `PRIMARY` (`workers-ai`) and `ALIAS` (`workersai`). |
+| `Meirdick\WorkersAi\WorkersAiKey` | The driver name, `workers-ai`. |
 | `Meirdick\WorkersAi\Providers\WorkersAiProvider` | The Laravel AI provider. |
 | `Meirdick\WorkersAi\Gateway\WorkersAiGateway` | The text and embedding gateway. |
 | `Meirdick\WorkersAi\Cloudflare\RetryPolicy` | Retry rules. Its public methods are `defaults()`, `shouldRetry()`, `backoffMilliseconds()` and `retryAfterMilliseconds()`. |

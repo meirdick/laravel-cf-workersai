@@ -1,11 +1,11 @@
 ---
 title: Quickstart
-description: Install the package, set your Cloudflare credentials and make a first text request.
+description: Install the package and call Workers AI directly. The gateway route has its own steps.
 sidebar:
   order: 1
 ---
 
-This page takes you from nothing to a working request. It needs about five minutes.
+This page calls Workers AI directly. `account_id` and a Workers AI token are enough. The gateway route is a separate setup. It needs a gateway, and sometimes a second token. Those steps are on [AI Gateway](/guides/ai-gateway/).
 
 ## Before you start
 
@@ -38,7 +38,11 @@ You need:
     Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com). Select your account. The account ID is the 32-character string in the dashboard URL after `/accounts/`. Do not paste a full URL. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
   </Step>
   <Step title="Create an API token">
+    This token is for the direct route. It is the `key` the package sends as `Authorization`.
+
     In the Cloudflare dashboard, open your profile, then API Tokens, then Create Token. Give the token the `Workers AI: Read` permission. This is the permission name the package uses in its error message. The dashboard can name it differently, so look for Workers AI. Copy the token. Cloudflare shows it once. See [Create API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
+
+    Do not create the AI Gateway token here. That token is `gateway_token`, and only the [gateway route](/guides/ai-gateway/) uses it.
   </Step>
   <Step title="Set environment variables">
     ```env
@@ -57,9 +61,15 @@ You need:
     ],
     ```
 
-    The `driver` value must be `workers-ai` (or the alias `workersai`).
+    The `driver` value must be `workers-ai`. This config calls Workers AI directly. It does not send requests through a gateway.
   </Step>
 </Steps>
+
+## Gateway route
+
+Skip this if the direct route is what you want. The first request below already works.
+
+To send the same calls through AI Gateway, the setup is different. Create the gateway, copy its slug, and set `gateway`. If that gateway has Authenticated Gateway on, it also needs `gateway_token`. Those steps, and the BYOK setup for third-party providers on the same gateway, are in [AI Gateway](/guides/ai-gateway/).
 
 <Aside type="caution" title="Keep tokens out of git">
   Put the token in `.env`. Do not commit it. Do not put it in `config/ai.php` as plain text.
@@ -111,6 +121,6 @@ Common first errors:
 ## Next steps
 
 - Classify with Clef, or extract values with Clairic. See [Decisions and extraction](/guides/decisions/).
-- Route requests through AI Gateway. See [AI Gateway](/guides/ai-gateway/).
+- Already on the direct route. Switch to the gateway with the steps in [AI Gateway](/guides/ai-gateway/).
 - Pick a model. See [Models](/guides/models/).
 - Set `reasoning_effort`. See [Reasoning models](/guides/reasoning/).

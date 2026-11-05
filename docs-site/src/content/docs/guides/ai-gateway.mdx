@@ -9,24 +9,50 @@ Cloudflare AI Gateway is a proxy for AI requests. It gives you request logs, cos
 
 ## Route requests through a gateway
 
-Create a gateway in the Cloudflare dashboard. Copy its slug. Then set `gateway`:
+Create a gateway in the Cloudflare dashboard. Copy its slug. Put that slug in `.env`, not in `config/ai.php`:
 
 ```env
 CLOUDFLARE_AI_GATEWAY=my-gateway
 ```
+
+`config/ai.php` only reads that variable. It does not contain the slug:
 
 ```php
 'workers-ai' => [
     'driver'     => 'workers-ai',
     'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
     'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
-    'gateway'    => env('CLOUDFLARE_AI_GATEWAY'),
+    'gateway'    => env('CLOUDFLARE_AI_GATEWAY'), // the slug from .env
 ],
 ```
 
 Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`. The dashboard shows them under `compat`.
 
 Use only the slug. If you give a URL or a value with a slash, the package throws and tells you to use the `url` key.
+
+## Other providers on the same gateway
+
+The gateway also fronts OpenAI, Anthropic and the rest. Store those keys in the dashboard with [BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/). Point that provider's own Laravel driver at the gateway. Do not build the URL by hand:
+
+```php
+use Meirdick\WorkersAi\Cloudflare\BaseUrl;
+
+'openai' => [
+    'driver' => 'openai',
+    'key'    => env('CLOUDFLARE_AI_API_TOKEN'),
+    'url'    => BaseUrl::providerUrl(env('CLOUDFLARE_ACCOUNT_ID'), env('CLOUDFLARE_AI_GATEWAY'), 'openai'),
+],
+```
+
+`providerUrl()` takes the account and gateway from `.env` and returns `…/<account>/<gateway>/openai`. Swap `'openai'` for `'anthropic'` or another provider slug. Do not call `config()` here. `config/ai.php` is still loading.
+
+A Workers AI model on this package is still `@cf/...`. The package adds `workers-ai/` on the gateway path. A third-party model keeps the name Cloudflare documents, so this also works:
+
+```php
+agent()->prompt('Hello', provider: 'workers-ai', model: 'openai/gpt-6-luna');
+```
+
+The direct route rejects that model. Third-party names only route through the gateway. The provider's own driver is the better call when you want that provider's tools and options. The `model:` form is the one-provider shortcut.
 
 ## Authenticated Gateway
 

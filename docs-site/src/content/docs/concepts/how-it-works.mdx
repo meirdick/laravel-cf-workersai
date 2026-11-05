@@ -15,12 +15,7 @@ This package is a Laravel AI provider. It turns Laravel AI calls into Workers AI
 
 ## How it plugs into Laravel AI
 
-The package registers a driver in the Laravel AI manager. It registers two names for the same driver:
-
-| Name | Use |
-| --- | --- |
-| `workers-ai` | Primary name. |
-| `workersai` | Alias. |
+The package registers one driver in the Laravel AI manager. The name is `workers-ai`.
 
 The provider has a text gateway and an embedding gateway, both backed by one class. The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as in any other provider.
 

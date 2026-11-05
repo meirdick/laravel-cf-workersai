@@ -1,6 +1,6 @@
 ---
 title: Workers AI for Laravel
-description: A Laravel AI provider for Cloudflare Workers AI, including Clef decisions and Clairic extraction.
+description: Use Cloudflare's edge-hosted Workers AI models in Laravel, direct or through AI Gateway.
 sidebar:
   hidden: true
 mode: custom
@@ -8,38 +8,40 @@ mode: custom
 
 <div class="mx-auto max-w-3xl px-6 py-16">
 
-<p class="text-sm font-medium text-muted-foreground">Laravel AI + Cloudflare Workers AI</p>
+<p class="text-sm font-medium text-muted-foreground">A Laravel AI provider</p>
 
-<h1 class="mt-3 text-4xl font-semibold tracking-tight text-balance">Run Workers AI from the Laravel code you already write.</h1>
+<h1 class="mt-3 text-4xl font-semibold tracking-tight text-balance">Cloudflare's models, on Cloudflare's edge, in Laravel.</h1>
 
-<p class="mt-4 text-lg text-muted-foreground text-pretty">One provider for chat, embeddings, tools, and the System One models Cloudflare hosts. Clef decides. Clairic extracts. Both work direct and through AI Gateway.</p>
+<p class="mt-4 text-lg text-muted-foreground text-pretty">Two ways to call the models Cloudflare hosts at the edge. Directly, with an account ID. Or through AI Gateway, the same gateway that also fronts third-party providers and stores their keys with BYOK. This package is both.</p>
 
 <div class="mt-8 flex flex-wrap gap-3">
   <LinkButton href="/quickstart/" variant="primary">Quickstart</LinkButton>
-  <LinkButton href="/guides/decisions/" variant="secondary">Clef and Clairic</LinkButton>
+  <LinkButton href="/guides/ai-gateway/" variant="secondary">AI Gateway</LinkButton>
   <LinkButton href="https://github.com/meirdick/laravel-cf-workersai" variant="minimal">GitHub</LinkButton>
 </div>
 
 <pre class="mt-10 overflow-x-auto rounded-lg border border-border bg-muted/40 p-4 text-sm"><code>composer require meirdick/laravel-cf-workersai</code></pre>
 
-<div class="mt-14 grid gap-4 sm:grid-cols-3">
-  <Card title="Same Laravel AI calls" href="/quickstart/">
-    `agent()`, tools, streaming and embeddings. Set the provider to `workers-ai`.
+<div class="mt-14 grid gap-4 sm:grid-cols-2">
+  <Card title="Workers AI as a provider" href="/quickstart/">
+    The models Cloudflare hosts on its edge, called as `workers-ai`. Chat, tools, streaming and embeddings use the Laravel AI code you already write.
   </Card>
-  <Card title="Clef and Clairic" href="/guides/decisions/">
-    Decisions through `Classification`. Typed extraction through `Extraction::of()`.
-  </Card>
-  <Card title="Direct or AI Gateway" href="/guides/ai-gateway/">
-    `account_id` alone, or add `gateway` for logs, cache and cost.
+  <Card title="Or through AI Gateway" href="/guides/ai-gateway/">
+    The same Workers AI calls, through the gateway that also fronts OpenAI, Anthropic and the rest. Store those keys with BYOK. Add `gateway` and this package sends them there.
   </Card>
 </div>
 
-## What you get
+## Why not the built-in driver
 
-- A default token cap, so answers are not cut at 256 tokens.
-- An exception when a reasoning model returns nothing.
-- `reasoning_effort`, and neuron figures for what Cloudflare bills.
-- Retries for HTTP 429 and Cloudflare edge errors.
+Laravel AI can point its `openai-compatible` driver at a `/compat` URL. That path has failed in production. Embeddings returned 401 on an authenticated gateway. A missing token cap cut answers at 256 tokens. An empty reasoning response came back as success.
+
+Use this package for either path. It picks the endpoint, sends the gateway auth header when you set one, and treats Cloudflare's failure modes as failures.
+
+## Cloudflare-only features
+
+- [Clef and Clairic](/guides/decisions/), the System One models Cloudflare hosts. Clef decides. Clairic extracts a typed value.
+- A default token cap, `reasoning_effort`, and the neuron figure Cloudflare bills.
+- Retries for HTTP 429 and for Cloudflare edge errors.
 
 Needs PHP 8.3 and `laravel/ai` 0.9 to 1.3. Clef needs `laravel/ai` 1.0 or later.
 

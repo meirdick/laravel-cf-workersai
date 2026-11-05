@@ -40,6 +40,14 @@ final class ModelPrefix
         $isCompat = BaseUrl::isCompatEndpoint($url);
         $hasPrefix = str_starts_with($model, self::PREFIX);
 
+        if (! $isCompat && ! self::isWorkersAiModel($model)) {
+            throw new InvalidArgumentException(
+                "Model '{$model}' is not a Workers AI model, and the configured endpoint is the direct Workers AI API. "
+                .'Third-party models such as `openai/gpt-6-luna` route through AI Gateway. Set `gateway` '
+                .'(or a `/compat` `url`) so the request goes to the multi-provider endpoint.'
+            );
+        }
+
         if (! $isCompat && $hasPrefix) {
             $bare = substr($model, strlen(self::PREFIX));
 
@@ -53,16 +61,35 @@ final class ModelPrefix
     }
 
     /**
-     * Add the `workers-ai/` prefix iff the URL targets `/compat` and the
-     * model doesn't already have it, so user code and `#[UseCheapestModel]`
-     * style defaults can carry bare IDs regardless of endpoint shape.
+     * Add the `workers-ai/` prefix on `/compat` for a Workers AI model that
+     * does not already have it.
+     *
+     * `/compat` is a multi-provider endpoint. It routes `workers-ai/@cf/...`
+     * to Workers AI and `openai/gpt-…` to OpenAI. Prefixing every name would
+     * send the OpenAI call to Workers AI. A name that is not a Workers AI
+     * model ID is returned unchanged, so one provider can send both.
      */
     public static function normalize(string $url, string $model): string
     {
-        if (! BaseUrl::isCompatEndpoint($url)) {
+        if (! BaseUrl::isCompatEndpoint($url) || ! self::isWorkersAiModel($model)) {
             return $model;
         }
 
         return str_starts_with($model, self::PREFIX) ? $model : self::PREFIX.$model;
+    }
+
+    /**
+     * A Workers AI model ID is `@cf/...`, or that ID already prefixed.
+     *
+     * Anything else on `/compat` is another provider's model, such as
+     * `openai/gpt-6-luna`, and must not gain the prefix.
+     */
+    public static function isWorkersAiModel(string $model): bool
+    {
+        $bare = str_starts_with($model, self::PREFIX)
+            ? substr($model, strlen(self::PREFIX))
+            : $model;
+
+        return str_starts_with($bare, '@cf/');
     }
 }

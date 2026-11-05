@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name is your choice. The `driver` value must be `workers-ai` or `workersai`.
+Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name is your choice. The `driver` value is `workers-ai`.
 
 ## Full example
 
@@ -51,7 +51,7 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
-| `driver` | string | none | Required. `workers-ai` or `workersai`. |
+| `driver` | string | none | Required. `workers-ai`. |
 | `key` | string | none | Required. Cloudflare API token with the `Workers AI: Read` permission. The old name `api_key` still works. If both are set, `key` wins. |
 | `account_id` | string | none | Cloudflare account ID. Required unless you set `url`. A 32-character hex string. Not a URL. |
 | `gateway` | string | none | AI Gateway slug. Sends requests through the gateway. |
@@ -113,4 +113,4 @@ The package reads no environment variables by itself. The names below are the on
 
 ## Provider names
 
-The service provider registers two driver names, both for the same driver: `workers-ai` and `workersai`.
+The service provider registers the driver as `workers-ai`.

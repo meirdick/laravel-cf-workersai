@@ -102,6 +102,36 @@ final class BaseUrl
         return str_ends_with(rtrim($url, '/'), '/compat');
     }
 
+    /**
+     * The AI Gateway URL for one provider, for another driver's `url` key.
+     *
+     * OpenAI's own driver wants `…/openai`. Anthropic's wants `…/anthropic`.
+     * This package's Workers AI calls use `/compat` and do not need this.
+     * The account and gateway are the same values this provider already has,
+     * so the app does not concatenate them in `config/ai.php`.
+     *
+     * Pass the account and gateway straight from `env()`. Do not pass
+     * `config('ai.providers.workers-ai')` from inside `config/ai.php`. That
+     * file is still loading, and the lookup recurses.
+     */
+    public static function providerUrl(string $accountId, string $gateway, string $provider): string
+    {
+        $accountId = self::nonEmpty($accountId);
+        $gateway = self::nonEmpty($gateway);
+        $provider = trim($provider, '/');
+
+        if ($accountId === null || $gateway === null || $provider === '') {
+            throw new InvalidArgumentException(
+                'An AI Gateway provider URL needs `account_id`, `gateway` and a provider name such as `openai`.'
+            );
+        }
+
+        self::validateAccountId($accountId);
+        self::validateGatewaySlug($gateway);
+
+        return "https://gateway.ai.cloudflare.com/v1/{$accountId}/{$gateway}/{$provider}";
+    }
+
     private static function validateAccountId(string $accountId): void
     {
         // Order matters: a pasted URL contains both `://` and `/`, so check the
