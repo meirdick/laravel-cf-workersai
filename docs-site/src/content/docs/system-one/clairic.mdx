@@ -1,0 +1,196 @@
+---
+title: Clairic extraction
+description: Read, compute or predict typed values from text and images with Clairic, through the Extraction API.
+sidebar:
+  order: 2
+  label: Clairic
+---
+
+Clairic is Cloudflare's extraction model. You send an input, called the state, and a set of typed fields. It returns one value per field. A value can be read from the input, computed from it or predicted from it. When the input does not determine a value, the value is null.
+
+Use Clairic when you cannot list the answers in advance, such as an invoice total or a due date. Use [Clef](/system-one/clef/) to choose among options you define.
+
+Laravel AI has no extraction API, so the package adds `Extraction`. It has the same shape as `Classification`, and it works on every supported `laravel/ai` version.
+
+<Aside type="note" title="Clairic is a Cloudflare preview model">
+  Cloudflare says every answer is well formed, but not always correct. One- and two-step arithmetic is reliable. Long chains of steps are not, so extract the inputs and do the math in your code. Use `confidence()`, `pNull()` and the intervals to decide what to automate. See the [Clairic model page](https://developers.cloudflare.com/workers-ai/models/clairic/).
+</Aside>
+
+## Extract values
+
+No extra config is needed. The `workers-ai` provider entry works on the [direct route and the gateway route](/concepts/routes/).
+
+```php
+use Meirdick\WorkersAi\Extraction;
+use Meirdick\WorkersAi\Extraction\DateField;
+use Meirdick\WorkersAi\Extraction\Estimate;
+use Meirdick\WorkersAi\Extraction\ListField;
+use Meirdick\WorkersAi\Extraction\Number;
+use Meirdick\WorkersAi\Extraction\Text;
+
+$text = 'Invoice INV-2291 from Northwind Supply, issued 2026-09-02, net 30. '
+    .'4 pallets at $250.00 each, shipping $80.00. Contact: Dana Ruiz, Priya Shah.';
+
+$invoice = Extraction::of($text)
+    ->fields([
+        'invoice_number' => new Text,
+        'due_date' => DateField::date('Issue date plus the net payment days'),
+        'total' => new Number(
+            instructions: 'Amount due including shipping',
+            decimals: 2,
+            unit: 'USD',
+        ),
+        'contacts' => ListField::of('text'),
+        'po_number' => new Text(instructions: 'Purchase order number'),
+        'days_to_pay' => new Estimate(
+            min: 0,
+            max: 120,
+            step: 1,
+            instructions: 'Days after issue until this invoice is paid',
+        ),
+    ])
+    ->extract();
+```
+
+## Read the answers
+
+```php
+$invoice['invoice_number']->value();  // 'INV-2291'
+$invoice['invoice_number']->span();   // [8, 16], offsets into the state
+$invoice['due_date']->value();        // '2026-10-02'
+$invoice['total']->value();           // 1080
+$invoice['contacts']->value();        // ['Dana Ruiz', 'Priya Shah']
+$invoice['po_number']->value();       // null, the invoice has none
+$invoice['days_to_pay']->median();    // 30
+```
+
+| Method | Returns |
+| --- | --- |
+| `value()` | The answer, or null when the input does not determine it. |
+| `isNull()` | True when `value()` is null. |
+| `isPresent($threshold = 0.5)` | True when there is a value and `pNull()` is at or below the threshold. |
+| `pNull()` | Probability that the input does not determine the value. |
+| `guess()` | The model's best value, even when `value()` is null. |
+| `confidence()` | How sure the model is of the guess. |
+| `span()` | `[start, end]` character offsets of a text answer. |
+| `spans()` | The offsets of each item in a list answer. |
+| `median()`, `mean()`, `p10()`, `p90()` | The figures of an estimate. `p10` to `p90` is an 80% interval. |
+| `pBelow()`, `pAbove()` | Probability that an estimate is outside `min` to `max`. |
+| `steps()` | One array of estimate figures for each forecast step. |
+| `type()`, `toArray()` | The answer type, and Cloudflare's whole answer. |
+
+On the response, `$invoice->truncated` is true when the state did not fit and Clairic cut it. `$invoice->usage` has the token counts.
+
+Use these figures to decide what to automate:
+
+```php
+$total = $invoice['total'];
+
+if ($total->isPresent(0.1) && $total->confidence() >= 0.9) {
+    $order->update(['total' => $total->value()]);
+} else {
+    ReviewQueue::push($order);
+}
+```
+
+## Field types
+
+| Class | Asks for | Options |
+| --- | --- | --- |
+| `Text` | A span of the state. | `instructions`, `nullThreshold` |
+| `Number` | A number. | `instructions`, `unit`, `integer`, `decimals`, `nullThreshold` |
+| `DateField::date()` | An ISO date. Also `time()`, `dateTime()` and `duration()`. | `instructions`. `duration()` also takes `unit` and `integer`. |
+| `ListField::of('text')` | A list of `text`, `number` or `date` items. | `instructions`, `unit`, `decimals`, `nullThreshold` |
+| `Estimate` | A median, a mean and an 80% interval. | Requires `min` and `max`. Also `step`, `scale`, `unit`, `instructions`. |
+| `Forecast` | One estimate per step. | Requires `min`, `max`, `horizon` and `interval`. |
+
+`Estimate` is best when the input has evidence, such as history or comparable items. Forecasting is basic, and it does not replace a time-series model.
+
+On a forecast answer, `value()`, `median()`, `p10()` and `p90()` return a list with one item per step. `steps()` returns the same figures grouped by step.
+
+## Set the reference date
+
+A date written without a year needs an anchor. A field that depends on today's date needs one too.
+
+```php
+Extraction::of($text)->fields($fields)->referenceDate('2026-11-05')->extract();
+```
+
+## Send images
+
+Send up to 4 JPEG, PNG or WebP images. The state can be blank when you send an image. Cloudflare allows 4 MiB per image and 8 MiB in total.
+
+```php
+use Laravel\Ai\Files\Image;
+
+Extraction::of('', [Image::fromPath(storage_path('app/receipt.jpg'))])
+    ->field('total', new Number(unit: 'USD'))
+    ->extract();
+```
+
+## Change the call
+
+Each of these methods returns the pending extraction, so you can chain them.
+
+```php
+Extraction::of($text)
+    ->fields($fields)
+    ->when($needsPo, fn ($pending) => $pending->field('po', new Text))
+    ->timeout(60)
+    ->withProviderOptions(['options' => ['return_state_text' => true]])
+    ->extract(provider: 'workers-ai', model: '@cf/cloudflare/clairic');
+```
+
+- Provider options cannot replace `model`, `state`, `fields` or `images`.
+- With `return_state_text`, the text Clairic read is on `$invoice->stateText`.
+- `withHeaders()` adds headers for one call, on `laravel/ai` 1.x. On earlier versions, use the `headers` config key.
+- With no `provider:`, the package uses `ai.default` if that is a Workers AI provider, otherwise the `workers-ai` entry.
+- Set your default model in `models.extraction.default`. A model that is not Clairic throws before a request.
+
+## Fail over
+
+Add a second provider entry to `config/ai.php`, such as another Workers AI account:
+
+```php
+'workers-ai-backup' => [
+    'driver'     => 'workers-ai',
+    'key'        => env('CLOUDFLARE_BACKUP_AI_API_TOKEN'),
+    'account_id' => env('CLOUDFLARE_BACKUP_ACCOUNT_ID'),
+],
+```
+
+Then give a list of providers. The package tries the next one on a failure that can pass on another provider.
+
+```php
+->extract(provider: ['workers-ai', 'workers-ai-backup']);
+```
+
+## Test your code
+
+`Extraction::fake()` replaces the request. Map each field name to the value you want. A field with no value is null, with `pNull()` at 1.0.
+
+```php
+use Meirdick\WorkersAi\Extraction;
+use Meirdick\WorkersAi\Prompts\ExtractionPrompt;
+
+Extraction::fake([['total' => 1080]]);
+
+// run your code, then:
+Extraction::assertExtracted(fn (ExtractionPrompt $prompt) => $prompt->asks('total'));
+Extraction::assertNotExtracted(fn (ExtractionPrompt $prompt) => $prompt->contains('secret'));
+Extraction::assertNothingExtracted();
+```
+
+`fake()` also accepts a closure that receives the prompt. A response can be a whole `ExtractionResponse`.
+
+## Events
+
+The package dispatches `Extracting`, `Extracted` and `ExtractionFailed`, in `Meirdick\WorkersAi\Events`. Each has `invocationId`, `provider`, `model` and `prompt`. `Extracted` adds `response`, and `ExtractionFailed` adds `exception`.
+
+## Errors
+
+Clairic has the same failures as [Clef](/system-one/clef/#errors). A blank state with no image, or no fields, throws `InvalidArgumentException` before a request.
+
+## Cost
+
+Cloudflare charges for input tokens only. Read the count with `$invoice->usage`: `inputTokens` on `laravel/ai` 1.x, `promptTokens` on earlier versions. `WorkersAiUsageReported` does not fire for Clairic. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

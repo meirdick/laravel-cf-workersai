@@ -1,13 +1,13 @@
 ---
 title: Testing
-description: Test code that uses the workers-ai provider with Laravel AI fakes and Http::fake.
+description: Test code that uses the workers-ai provider. Use Laravel AI fakes, Classification::fake(), Extraction::fake() and Http::fake().
 sidebar:
   order: 12
 ---
 
-You do not need real Cloudflare credentials to test your own code. Use the Laravel AI fakes. The `Http::fake` example below needs a fake token and account ID in config.
+You do not need Cloudflare credentials to test your own code. Use the fakes in this page. The `Http::fake` example needs a fake token and account ID in config.
 
-The examples use Pest. For PHPUnit, put the same calls in a test method and replace `expect(...)->toBe(...)` with `$this->assertSame(...)`.
+The examples use Pest. For PHPUnit, put the same calls in a test method and use `$this->assertSame(...)` in place of `expect(...)->toBe(...)`.
 
 ## Fake an agent
 
@@ -23,7 +23,7 @@ SupportAgent::assertPrompted('How do I reset my password?');
 
 With no list of responses, the fake returns `Fake response for prompt: ` followed by the first 10 words of the prompt. You can pass a closure that receives the prompt.
 
-The fake replaces the gateway. No request reaches the package. Use it for your app logic.
+The fake replaces the gateway, so no request reaches the package. Use it to test your own logic.
 
 ## Fake embeddings
 
@@ -38,7 +38,7 @@ Embeddings::assertGenerated(fn ($prompt) => $prompt->inputs === ['hello']);
 
 ## Fake the HTTP layer
 
-To test with the real package code, fake the HTTP call. This checks the request body and the response handling.
+To run the real package code, fake the HTTP call. This tests the request body and the response handling.
 
 ```php
 use Illuminate\Http\Client\Request;
@@ -71,7 +71,7 @@ $response = agent('You are a helpful assistant.')->prompt('Hi', provider: 'worke
 Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/chat/completions'));
 ```
 
-Use `gateway.ai.cloudflare.com/*` as the URL pattern if your test config sets `gateway`.
+If your test config sets `gateway`, use the pattern `gateway.ai.cloudflare.com/*`.
 
 ## Test the neuron event
 
@@ -85,6 +85,66 @@ Event::fake([WorkersAiUsageReported::class]);
 
 Event::assertDispatched(WorkersAiUsageReported::class);
 ```
+
+## Fake Clef
+
+Clef uses the Laravel AI classification API. Call `Classification::fake()` with one array per expected call. Each array maps a question key to an answer object.
+
+```php
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
+use Laravel\Ai\Prompts\ClassificationPrompt;
+use Laravel\Ai\Responses\Data\BooleanAnswer;
+
+Classification::fake([
+    ['decision' => new BooleanAnswer(0.92)],
+]);
+
+$response = Classification::of('Checkout is down.')
+    ->question('decision', new Boolean('Is this urgent?'))
+    ->classify(provider: 'workers-ai');
+
+expect($response['decision']->isTrue())->toBeTrue();
+
+Classification::assertClassified(fn (ClassificationPrompt $prompt) => $prompt->contains('Checkout') && $prompt->asks('decision'));
+```
+
+A question with no answer in the fake gets a random answer of the right shape. Give an answer for every question your test reads. `assertNotClassified()` and `assertNothingClassified()` also exist. `Str::decide()` asks one question with the key `decision`, so the same fake works for it.
+
+Clef needs `laravel/ai` 1.0 or later. The fake sends no request.
+
+## Fake Clairic
+
+`laravel/ai` has no extraction API, so the package adds `Meirdick\WorkersAi\Extraction::fake()`. Give one array per expected call. Each array maps a field name to a value.
+
+```php
+use Meirdick\WorkersAi\Extraction;
+use Meirdick\WorkersAi\Extraction\Number;
+use Meirdick\WorkersAi\Extraction\Text;
+use Meirdick\WorkersAi\Prompts\ExtractionPrompt;
+
+Extraction::fake([
+    ['total' => 1080],
+]);
+
+$invoice = Extraction::of('An invoice for Dana.')
+    ->fields(['total' => new Number, 'po' => new Text])
+    ->extract();
+
+expect($invoice['total']->value())->toBe(1080)
+    ->and($invoice['po']->value())->toBeNull()
+    ->and($invoice['po']->pNull())->toBe(1.0);
+
+Extraction::assertExtracted(fn (ExtractionPrompt $prompt) => $prompt->contains('Dana') && $prompt->asks('total'));
+```
+
+A field with no value in the fake is `null` with `pNull()` of `1.0`, the same as a real answer when the text does not determine the field. A call past the end of your list also returns `null` for every field.
+
+You can pass a closure that receives the `ExtractionPrompt` and returns the map. Use `Extraction::isFaked()` to check the state. The assertions are `assertExtracted()`, `assertNotExtracted()` and `assertNothingExtracted()`. The fake sends no request.
+
+## Test the extraction events
+
+Each Clairic call dispatches `Extracting`, then `Extracted` or `ExtractionFailed`. The events fire with `Extraction::fake()` too, because the fake replaces only the HTTP call. Use `Event::fake()` to assert them. See [Exceptions and events](/reference/exceptions-and-events/).
 
 ## Live tests
 

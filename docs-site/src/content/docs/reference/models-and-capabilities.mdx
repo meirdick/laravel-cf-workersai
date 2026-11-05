@@ -18,11 +18,11 @@ sidebar:
 | Image input | Yes | JPEG, PNG, GIF and WebP for uploaded files. See [Image input](/guides/image-input/). |
 | Reasoning text | Yes | Read from `reasoning_content`, `reasoning` or `thinking`. |
 | `reasoning_effort` | Yes | `low`, `medium`, `high`. |
-| AI Gateway | Yes | `/compat` by default. Authenticated Gateway supported. |
+| AI Gateway | Yes | `/compat` by default. Authenticated Gateway supported. See [AI Gateway](/guides/ai-gateway/). |
 | Failover | Yes | For transient failures. See [Errors and retries](/guides/errors-and-retries/). |
-| Neuron figures | Yes | By event, for chat and embedding calls, streamed or not. |
-| Classification (Clef) | Yes | `laravel/ai` 1.0 or later. See [Decisions](/guides/decisions/). |
-| Extraction (Clairic) | Yes | `Extraction::of()`. Not part of laravel/ai. |
+| Neuron figures | Yes | By event, for chat and embedding calls, streamed or not. Not for Clef or Clairic. |
+| Classification (Clef) | Yes | `laravel/ai` 1.0 or later. `Str::decide` and `Collection::decide` work. Fake with `Classification::fake()`. See [Clef](/system-one/clef/). |
+| Extraction (Clairic) | Yes | `Extraction::of()`, not part of `laravel/ai`. Has `Extraction::fake()`, the `Extracting`, `Extracted` and `ExtractionFailed` events, and failover. See [Clairic](/system-one/clairic/). |
 
 ## Not supported
 
@@ -39,7 +39,7 @@ sidebar:
 
 ## Models
 
-The package does not keep a list of models. You give the model name, and Cloudflare decides if it exists and if your account can use it. See [Models](/guides/models/) for the package defaults and for notes from the maintainer's tests.
+The package does not keep a list of models. You give the model name, and Cloudflare decides if it exists and if your account can use it. The package treats an ID that starts with `@cf/` or `@hf/` as a Workers AI model. See [Models](/guides/models/) for the package defaults and for test notes.
 
 ## Laravel AI versions
 
@@ -49,9 +49,9 @@ The package does not keep a list of models. You give the model name, and Cloudfl
 | `0.9` to `0.11` | `^1.0` | `Usage::$promptTokens` excludes cached tokens. |
 | `1.0` to `1.3` | `^1.0` | `TextUsage::$inputTokens` includes cached tokens. |
 
-Package `^1.0` supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. It is tested on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. See [Cost tracking](/guides/cost-tracking/) for the token count difference.
+Package `^1.0` supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase. The tests ran on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. See [Cost tracking](/guides/cost-tracking/) for the token count difference.
 
-Some features depend on the `laravel/ai` version:
+These features depend on the `laravel/ai` version:
 
 | Feature | Needs |
 | --- | --- |
@@ -60,3 +60,6 @@ Some features depend on the `laravel/ai` version:
 | `StreamErrorException` on stream error | `laravel/ai` 0.11 or later. |
 | `StepResponse::$reasoning` | `laravel/ai` 1.x. |
 | `Provider::withHeaders()` per-call headers | `laravel/ai` 1.x. |
+| Clef (`Classification`, `Str::decide`, `Collection::decide`) | `laravel/ai` 1.0 or later. |
+| Clef image attachments | `laravel/ai` 1.2 or later. |
+| Clairic (`Extraction`) | Every supported version. |

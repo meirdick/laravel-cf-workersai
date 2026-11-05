@@ -1,0 +1,158 @@
+---
+title: Clef decisions
+description: Answer yes or no, multiple choice and scored questions with Clef, through the Laravel AI classification API.
+sidebar:
+  order: 1
+  label: Clef
+---
+
+Clef is Cloudflare's decision model. It reads an input, called the state, and answers typed questions with a probability for each allowed answer. It generates no text, so you have nothing to parse and no reasoning tokens to wait for.
+
+Use Clef to route a ticket, flag content or pick a next step. Use [Clairic](/system-one/clairic/) when you cannot list the answers in advance, such as an invoice total. Use [`agent()`](/guides/text-generation/) when you need written text.
+
+Clef follows the same API as Jev, the decision model from TypeSafe that Laravel AI uses by default. So the Laravel AI classification API works unchanged. If your code uses Jev, set `provider: 'workers-ai'` and keep the rest.
+
+## Requirements
+
+- `laravel/ai` 1.0 or later. Earlier versions have no classification API.
+- No extra config. The `workers-ai` provider entry works on the [direct route and the gateway route](/concepts/routes/).
+
+## Ask questions
+
+```php
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
+use Laravel\Ai\Classification\Choice;
+use Laravel\Ai\Classification\Score;
+
+$response = Classification::of('Checkout has been failing for every customer for the last hour.')
+    ->questions([
+        'urgent' => new Boolean('Is this support request urgent?'),
+        'team' => new Choice('Which team should handle this request?', [
+            'billing' => 'Payments, invoices, and refunds',
+            'technical' => 'Outages, errors, and configuration',
+        ]),
+        'severity' => new Score('How severe is the customer impact?', [
+            'No impact', 'Minor', 'Major', 'Critical',
+        ]),
+    ])
+    ->classify(provider: 'workers-ai');
+```
+
+A request can hold 1 to 64 questions. The state can be a string or an array, such as a record or a chat log.
+
+To omit `provider:`, set `default_for_classification` to `workers-ai` in `config/ai.php`. Laravel AI's default is `typesafe`.
+
+## Read the answers
+
+Read each answer by its key:
+
+```php
+$response['urgent']->isTrue();          // probability >= 0.5
+$response['urgent']->isTrue(0.9);       // a stricter threshold
+$response['urgent']->probability;       // 0.0 to 1.0
+
+$response['team']->choice;              // 'technical'
+$response['team']->probabilityOf('billing');
+$response['team']->confidence;
+
+$response['severity']->score;           // probability-weighted level
+$response['severity']->level();         // nearest level, as an integer
+$response['severity']->label();         // that level's text
+```
+
+Use the probability to decide what to automate. For example, act when `isTrue(0.9)` is true and send the rest to a person.
+
+## Use the shortcuts
+
+Laravel AI's decision helpers also work. They use `default_for_classification`, or the `provider:` you pass.
+
+```php
+use Illuminate\Support\Str;
+
+Str::decide($ticket, 'Is this urgent?', provider: 'workers-ai');
+
+collect(['billing' => 'Invoices', 'technical' => 'Outages'])
+    ->decide('Which team?', $ticket, provider: 'workers-ai'); // 'technical'
+```
+
+`Str::decide()` needs `laravel/ai` 1.0. `Collection::decide()` needs 1.1.
+
+## Choose a model
+
+| Model | Use |
+| --- | --- |
+| `@cf/cloudflare/clef` | Highest-precision decisions. The default. |
+| `@cf/cloudflare/clef-flash` | Latency-critical decisions on a hot path. |
+| `@cf/cloudflare/clef-omni` | Also reads audio and video. |
+
+```php
+->classify(provider: 'workers-ai', model: '@cf/cloudflare/clef-flash');
+```
+
+Set your default in `models.classification.default`. A model that is not Clef throws before a request.
+
+## Send images
+
+Send up to 4 JPEG, PNG or WebP images. This needs `laravel/ai` 1.2 or later. A fifth image throws before a request.
+
+```php
+use Laravel\Ai\Files\Image;
+
+Classification::of('A product photo from a customer.', [
+    Image::fromPath(storage_path('app/photo.jpg')),
+])->question('damaged', new Boolean('Is the product damaged?'))
+    ->classify(provider: 'workers-ai');
+```
+
+Cloudflare allows 4 MiB per image and 8 MiB in total. It does not accept remote image URLs.
+
+## Send audio or video
+
+Only `clef-omni` reads these. The package has no attachment type for them. Pass base64 data URLs as provider options:
+
+```php
+Classification::of('A recording of the unit running.')
+    ->question('normal', new Boolean('Does the unit sound normal?'))
+    ->withProviderOptions(['audio' => ['data:audio/mpeg;base64,...']])
+    ->classify(provider: 'workers-ai', model: '@cf/cloudflare/clef-omni');
+```
+
+## Fail over
+
+Give a list of providers. Laravel AI tries the next one on a failure that can pass on another provider, such as HTTP 429 or 503.
+
+```php
+->classify(provider: ['workers-ai', 'typesafe']);
+```
+
+## Test your code
+
+`Classification::fake()` replaces the gateway, and no request is sent.
+
+```php
+use Laravel\Ai\Responses\Data\BooleanAnswer;
+
+Classification::fake([['urgent' => new BooleanAnswer(0.9)]]);
+
+// run your code, then:
+Classification::assertClassified(fn ($prompt) => $prompt->asks('urgent'));
+```
+
+Laravel AI also dispatches its `Classifying`, `Classified` and `ClassificationFailed` events.
+
+## Errors
+
+| Result | Exception |
+| --- | --- |
+| HTTP 408 | `GatewayTimeoutException` |
+| HTTP 429 after retries | `RateLimitedException` |
+| HTTP 502, 503, 504, 520, 522, 524 after retries | `ProviderOverloadedException` |
+| HTTP 200 with an error in the body, or no answers | `AiException` |
+| Any other non-2xx status | `Illuminate\Http\Client\RequestException` |
+
+A `url` that ends in `/compat` throws `InvalidArgumentException`, because that path does not serve Clef. See [Direct and gateway routes](/concepts/routes/).
+
+## Cost
+
+Cloudflare charges for input tokens only. Read the count with `$response->usage->inputTokens`. `WorkersAiUsageReported` does not fire for Clef. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

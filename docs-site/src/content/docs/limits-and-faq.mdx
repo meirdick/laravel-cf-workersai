@@ -8,20 +8,25 @@ sidebar:
 ## Limits
 
 - Text, embeddings, Clef classification, Clairic extraction and image input.
+- Clairic is a Cloudflare preview model. Its behavior can change.
 - Clef and Clairic do not use the `/compat` path. A `url` that ends in `/compat` throws for those calls.
 - No document, audio or video attachments.
 - No Laravel AI provider tools.
 - No request concurrency limit. The package retries HTTP 429. It does not prevent it.
 - The package does not check model names.
 - The package does not set up your AI Gateway. Create and configure it in the Cloudflare dashboard.
-- Reasoning controls depend on the model. `reasoning_effort` is ignored by some models.
+- Reasoning controls depend on the model. Some models ignore `reasoning_effort`.
 - Timing and rate figures in these docs come from tests on one account. Your results can differ.
 
 ## FAQ
 
 ### Do I need AI Gateway?
 
-No. Set only `account_id` to call Workers AI directly. Add `gateway` to get logs, analytics, caching and gateway retries.
+No. Set only `account_id` to call Workers AI directly. Add `gateway` to get logs, analytics, caching and gateway retries. See [AI Gateway](/guides/ai-gateway/).
+
+### Do I need AI Gateway for Clef and Clairic?
+
+No. Both work on the direct route. Set `account_id` and `key`. Add `gateway` only if you want gateway logs. The package sends it as the `cf-aig-gateway-id` header.
 
 ### What is the difference between this package and the openai-compatible driver?
 
@@ -35,11 +40,11 @@ Use this package when you need one or more of these:
 - Neuron figures for cost tracking.
 - Automatic retry of HTTP 429 and of Cloudflare edge errors.
 - An AI Gateway with Authenticated Gateway turned on.
-- Clef decisions and Clairic extraction. The built-in driver has neither.
+- Clef classification and Clairic extraction. The built-in driver has neither.
 
 ### Which token permission do I need?
 
-`Workers AI: Read`.
+A token with the permission named Account > Workers AI > Read in the Cloudflare dashboard. For an authenticated gateway, chat and embeddings also need `gateway_token`.
 
 ### Does it work with Laravel Cloud, queues and Horizon?
 
@@ -63,7 +68,7 @@ No. Requests go to the URL that your config resolves to.
 
 ### Is the package production ready?
 
-Version 1.0.0 is the first stable release. It supports `laravel/ai` 0.9 to 1.3. Version 0.7.0 was tested against four consuming applications. Read the [changelog](/changelog/) before you upgrade.
+Version 1.2.0 is current. The 1.x line follows semantic versioning, and 1.0.0 was the first stable release. It supports `laravel/ai` 0.9 to 1.3. Clairic is a Cloudflare preview model, so test it on your own data. Read the [changelog](/changelog/) before you upgrade.
 
 ### How do I report a bug?
 

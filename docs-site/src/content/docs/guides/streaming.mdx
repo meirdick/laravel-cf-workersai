@@ -1,11 +1,11 @@
 ---
 title: Streaming
-description: Stream text and reasoning events from Workers AI.
+description: Stream text and reasoning events from Workers AI, and read usage and neurons from a stream.
 sidebar:
   order: 2
 ---
 
-Call `stream()` on an agent. Loop over the events.
+Call `stream()` on an agent and loop over the events.
 
 ```php
 use Laravel\Ai\Streaming\Events\TextDelta;
@@ -19,22 +19,22 @@ foreach (agent('You are a helpful assistant.')->stream('Tell me a story.', provi
 
 ## Reasoning events
 
-A reasoning model sends `ReasoningStart`, `ReasoningDelta` and `ReasoningEnd` events before the text events. Both classes are in `Laravel\Ai\Streaming\Events`.
+A reasoning model sends `ReasoningStart`, `ReasoningDelta` and `ReasoningEnd` events before the text events. All three classes are in `Laravel\Ai\Streaming\Events`.
 
-Models send reasoning text under different keys. The package reads `reasoning_content`, `reasoning` and `thinking` on the stream. You do not handle this.
+Models send reasoning text under different keys. The package reads `reasoning_content`, `reasoning` and `thinking` for you.
 
 ## Usage on streams
 
-The package asks Cloudflare for usage data on the stream. It adds the usage across tool-call steps. Cloudflare can send a final usage chunk with all zeros. The package does not let that chunk overwrite real figures.
+The package asks Cloudflare for usage data on the stream and adds it up across tool-call steps. Cloudflare can send a last usage chunk of all zeros. The package keeps the real figures and ignores that chunk.
 
 ## Stream and tools
 
-Streaming works with tool calls. The package collects partial tool-call fragments and gives the complete call to Laravel AI. See [Tools](/guides/tools/).
+Streaming works with tool calls. The package joins the partial tool-call fragments and gives Laravel AI the complete call. See [Tools](/guides/tools/).
 
 ## Stream errors
 
-On `laravel/ai` 0.11 and later, a stream that ends on an error event throws `StreamErrorException`. On 0.9 and 0.10, the run ends without an exception.
+On `laravel/ai` 0.11 and later, a stream that ends on an error event throws `StreamErrorException`. On 0.9 and 0.10, the stream ends with no exception. Check for an error event in your loop if you support those versions.
 
 ## Neuron events on streams
 
-The `WorkersAiUsageReported` event is not sent for streamed requests. The `StreamEnd` event carries the summed usage. On `laravel/ai` 1.x, `StreamEnd::$usage` is a `TextUsage` with `inputTokens`. On 0.9 to 0.11, it is a `Usage` with `promptTokens`. See [Cost tracking](/guides/cost-tracking/).
+`WorkersAiUsageReported` fires for streamed calls too, once per model step after the last chunk. See [Cost tracking](/guides/cost-tracking/). The `StreamEnd` event also carries the summed token usage. On `laravel/ai` 1.x, `StreamEnd::$usage` is a `TextUsage` with `inputTokens`. On 0.9 to 0.11, it is a `Usage` with `promptTokens`.

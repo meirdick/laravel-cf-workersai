@@ -1,40 +1,49 @@
 ---
 title: Exceptions and events
-description: Every class the package adds, with when it is thrown or dispatched.
+description: Every exception, event and class the package adds, with when it is thrown or dispatched.
 sidebar:
   order: 3
 ---
 
 ## Exceptions
 
-All three exceptions are in the namespace `Meirdick\WorkersAi\Exceptions`. All extend `Laravel\Ai\Exceptions\AiException`.
+The package adds three exceptions in the namespace `Meirdick\WorkersAi\Exceptions`. All extend `Laravel\Ai\Exceptions\AiException`.
 
 | Class | Thrown when | Failover | Fix |
 | --- | --- | --- | --- |
 | `EmptyResponseException` | A step returns no text and no tool calls, and `throw_on_empty_response` is on. | No | Raise the token cap or lower `reasoning_effort`. |
 | `TruncatedResponseException` | A step ends with finish reason `length`, and `throw_on_truncation` is on. | No | Raise the token cap. |
-| `GatewayTimeoutException` | The gateway returns HTTP 408. | Yes | Lower the token cap, lower `reasoning_effort`, or split the work. |
+| `GatewayTimeoutException` | Cloudflare returns HTTP 408. This includes Clef and Clairic calls. | Yes | Lower the token cap, lower `reasoning_effort`, split the work, or set a failover provider. |
 
 `EmptyResponseException` names the model, the finish reason and the reasoning tokens. `TruncatedResponseException` names the model, the completion tokens and the requested cap.
 
 ## Other exceptions you can see
 
-These come from Laravel AI or PHP, not from the package:
+These come from Laravel AI, Laravel or PHP, not from the package's own classes:
 
 | Class | Cause |
 | --- | --- |
-| `Laravel\Ai\Exceptions\AiException` | Config errors (missing token, bad `account_id`, bad `gateway`, both `url` and `account_id`), prefixed model on the direct API, an error payload inside an HTTP 200 response, response without choices. |
+| `Laravel\Ai\Exceptions\AiException` | Missing token. An error payload inside an HTTP 200 response. A chat response without choices. For Clef and Clairic: a 200 with a non-empty `errors`, `success: false` (`Workers AI Error: [type] message`), or a reply with no `answers` (`Workers AI Error: Response contained no answers.`). |
 | `Illuminate\Http\Client\RequestException` | Any non-2xx status the package does not map: 400, 401, 403, 404, 410, 413 and others. The message holds the status and the Cloudflare body. Not failoverable. |
 | `Laravel\Ai\Exceptions\RateLimitedException` | HTTP 429 after all attempts. |
 | `Laravel\Ai\Exceptions\ProviderOverloadedException` | HTTP 502, 503, 504, 520, 522 or 524 after all attempts. |
 | `Laravel\Ai\Exceptions\InsufficientCreditsException` | HTTP 402. |
 | `Laravel\Ai\Exceptions\ProviderConnectionException` | Network failure or timeout (`laravel/ai` 0.11 and later). |
-| `InvalidArgumentException` | `reasoning_effort` outside `low`, `medium`, `high`. Unsupported attachment type. Document attachment. |
+| `InvalidArgumentException` | Config errors: no `account_id` or `url`, both set, a URL in `account_id` or `gateway`. A `workers-ai/`-prefixed model on the direct API. `reasoning_effort` outside `low`, `medium`, `high`. A document or unsupported attachment. A model that is not Clef or Clairic on those calls. More than 4 images on Clef or Clairic. A `/compat` `url` on a Clef or Clairic call. |
 | `RuntimeException` | A provider tool was given. |
 
-## Event
+## Events
 
-`Meirdick\WorkersAi\Events\WorkersAiUsageReported` is dispatched once per non-streamed model call that reports `usage.neurons`. See [Cost tracking](/guides/cost-tracking/).
+| Class | Dispatched | Properties |
+| --- | --- | --- |
+| `WorkersAiUsageReported` | Once per chat or embeddings call that reports `usage.neurons`. Streamed calls too (since 1.0.1), once per step after the last chunk. | `provider`, `model`, `neurons`, `promptTokens`, `completionTokens`, `reasoningTokens` |
+| `Extracting` | Before a Clairic call. | `invocationId`, `provider`, `model`, `prompt` |
+| `Extracted` | After a Clairic call succeeds. | `invocationId`, `provider`, `model`, `prompt`, `response` |
+| `ExtractionFailed` | When a Clairic call throws. The exception is thrown again after the event. | `invocationId`, `provider`, `model`, `prompt`, `exception` |
+
+All four are in `Meirdick\WorkersAi\Events`. `prompt` is a `Meirdick\WorkersAi\Prompts\ExtractionPrompt`. `response` is an `ExtractionResponse`.
+
+`WorkersAiUsageReported` is for chat and embeddings only. Clef and Clairic do not dispatch it, because Cloudflare bills them per input token. Read `$response->usage->inputTokens` instead. See [Cost tracking](/guides/cost-tracking/).
 
 ## Attribute
 
@@ -48,4 +57,7 @@ These come from Laravel AI or PHP, not from the package:
 | `Meirdick\WorkersAi\WorkersAiKey` | The driver name, `workers-ai`. |
 | `Meirdick\WorkersAi\Providers\WorkersAiProvider` | The Laravel AI provider. |
 | `Meirdick\WorkersAi\Gateway\WorkersAiGateway` | The text and embedding gateway. |
+| `Meirdick\WorkersAi\Extraction` | Entry point for Clairic: `of()`, `fake()`, `isFaked()`, `assertExtracted()`, `assertNotExtracted()` and `assertNothingExtracted()`. See [Testing](/guides/testing/). |
+| `Meirdick\WorkersAi\Prompts\ExtractionPrompt` | One Clairic call, as events and `Extraction::fake()` assertions see it. Has `contains()`, `asks()` and `count()`. |
+| `Meirdick\WorkersAi\Gateway\FakeExtractionGateway` | The fake that `Extraction::fake()` installs. |
 | `Meirdick\WorkersAi\Cloudflare\RetryPolicy` | Retry rules. Its public methods are `defaults()`, `shouldRetry()`, `backoffMilliseconds()` and `retryAfterMilliseconds()`. |

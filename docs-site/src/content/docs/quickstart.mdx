@@ -1,11 +1,9 @@
 ---
 title: Quickstart
-description: Install the package and call Workers AI directly. The gateway route has its own steps.
-sidebar:
-  order: 1
+description: Install the package, connect directly or through AI Gateway, and make your first text, Clef and Clairic calls.
 ---
 
-This page calls Workers AI directly. `account_id` and a Workers AI token are enough. The gateway route is a separate setup. It needs a gateway, and sometimes a second token. Those steps are on [AI Gateway](/guides/ai-gateway/).
+This page takes you from `composer require` to a working call. You choose a route in step 2. You can change it later without changes to your calling code.
 
 ## Before you start
 
@@ -15,7 +13,7 @@ You need:
 - PHP 8.3 or later.
 - A Cloudflare account.
 
-## Install and configure
+## 1. Install and get your credentials
 
 <Steps>
   <Step title="Install the package">
@@ -23,9 +21,7 @@ You need:
     composer require meirdick/laravel-cf-workersai
     ```
 
-    This installs version `^1.0`. It works with `laravel/ai` 0.9 to 1.3.
-
-    Laravel package discovery registers the service provider. You do not publish anything for this package.
+    Package discovery registers the provider. This package has nothing to publish.
   </Step>
   <Step title="Publish the Laravel AI config">
     Skip this step if `config/ai.php` exists.
@@ -35,23 +31,29 @@ You need:
     ```
   </Step>
   <Step title="Find your account ID">
-    Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com). Select your account. The account ID is the 32-character string in the dashboard URL after `/accounts/`. Do not paste a full URL. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
+    Sign in to the [Cloudflare dashboard](https://dash.cloudflare.com) and select your account. The account ID is the 32-character string in the URL after the host. See [Find account and zone IDs](https://developers.cloudflare.com/fundamentals/account/find-account-and-zone-ids/).
   </Step>
   <Step title="Create an API token">
-    This token is for the direct route. It is the `key` the package sends as `Authorization`.
-
-    In the Cloudflare dashboard, open your profile, then API Tokens, then Create Token. Give the token the `Workers AI: Read` permission. This is the permission name the package uses in its error message. The dashboard can name it differently, so look for Workers AI. Copy the token. Cloudflare shows it once. See [Create API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
-
-    Do not create the AI Gateway token here. That token is `gateway_token`, and only the [gateway route](/guides/ai-gateway/) uses it.
+    Go to your profile, then API Tokens, then Create Token. Add the permission Account, Workers AI, Read. Copy the token. Cloudflare shows it once. You add it to `.env` in step 2. See [Create API token](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/).
   </Step>
-  <Step title="Set environment variables">
-    ```env
+</Steps>
+
+## 2. Choose a route
+
+The **direct route** calls Workers AI and needs nothing else. The **gateway route** adds AI Gateway request logs, caching and rate limits. Start with the direct route if you are not sure. [Direct and gateway routes](/concepts/routes/) compares them.
+
+Each route has two parts. Your credentials go in your application's `.env` file. The provider entry goes in `config/ai.php`, and it reads those values with `env()`. Do not write the values in `config/ai.php`.
+
+<Tabs syncKey="route">
+  <TabItem label="Direct">
+    Add your credentials to your application's `.env` file:
+
+    ```ini
     CLOUDFLARE_ACCOUNT_ID=your-account-id
     CLOUDFLARE_AI_API_TOKEN=your-api-token
     ```
-  </Step>
-  <Step title="Add the provider to config/ai.php">
-    Add this entry inside the existing `providers` array:
+
+    Then add this entry to the `providers` array in `config/ai.php`. Copy it as it is:
 
     ```php
     'workers-ai' => [
@@ -60,22 +62,44 @@ You need:
         'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
     ],
     ```
+  </TabItem>
+  <TabItem label="Gateway">
+    In the Cloudflare dashboard, go to AI, then AI Gateway, then Create Gateway. Copy the gateway name. This name is the slug.
 
-    The `driver` value must be `workers-ai`. This config calls Workers AI directly. It does not send requests through a gateway.
-  </Step>
-</Steps>
+    Add your credentials and the slug to your application's `.env` file:
 
-## Gateway route
+    ```ini
+    CLOUDFLARE_ACCOUNT_ID=your-account-id
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    CLOUDFLARE_AI_GATEWAY=your-gateway-slug
+    CLOUDFLARE_AI_GATEWAY_TOKEN=
+    ```
 
-Skip this if the direct route is what you want. The first request below already works.
+    Then add this entry to the `providers` array in `config/ai.php`. Copy it as it is:
 
-To send the same calls through AI Gateway, the setup is different. Create the gateway, copy its slug, and set `gateway`. If that gateway has Authenticated Gateway on, it also needs `gateway_token`. Those steps, and the BYOK setup for third-party providers on the same gateway, are in [AI Gateway](/guides/ai-gateway/).
+    ```php
+    'workers-ai' => [
+        'driver'        => 'workers-ai',
+        'key'           => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id'    => env('CLOUDFLARE_ACCOUNT_ID'),
+        'gateway'       => env('CLOUDFLARE_AI_GATEWAY'),
+        'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+    ],
+    ```
+
+    Leave `CLOUDFLARE_AI_GATEWAY_TOKEN` empty unless Authenticated Gateway is on in the gateway settings. If it is on, create the token on that settings page and put it in `.env`. See [Authenticated Gateway](/guides/ai-gateway/#authenticated-gateway).
+  </TabItem>
+</Tabs>
 
 <Aside type="caution" title="Keep tokens out of git">
-  Put the token in `.env`. Do not commit it. Do not put it in `config/ai.php` as plain text.
+  Laravel's `.gitignore` already excludes `.env`. Do not commit tokens, and do not write them in `config/ai.php`, which is in git. After `php artisan config:cache`, Laravel reads the cached values, so run it again after you change `.env`.
 </Aside>
 
-## Make a first request
+## 3. Make your first calls
+
+The same code runs on both routes. You can run these calls in `php artisan tinker`.
+
+Generate text:
 
 ```php
 use function Laravel\Ai\agent;
@@ -85,9 +109,7 @@ $response = agent('You are a helpful assistant.')->prompt('Say hi.', provider: '
 echo $response->text;
 ```
 
-Without a `model:` argument, the package uses `@cf/meta/llama-3.3-70b-instruct-fp8-fast`.
-
-Pass any Workers AI model with `model:`:
+Without `model:`, the package uses `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. To use another model, pass any Workers AI model ID:
 
 ```php
 $response = agent('You are a helpful assistant.')->prompt(
@@ -97,30 +119,58 @@ $response = agent('You are a helpful assistant.')->prompt(
 );
 ```
 
-## Make Workers AI the default provider
-
-Set the default in `config/ai.php`:
+Ask Clef a question. This call needs `laravel/ai` 1.0 or later:
 
 ```php
-'default' => 'workers-ai',
+use Laravel\Ai\Classification;
+use Laravel\Ai\Classification\Boolean;
+
+$response = Classification::of('Checkout has been failing for every customer.')
+    ->question('urgent', new Boolean('Is this support request urgent?'))
+    ->classify(provider: 'workers-ai');
+
+$response['urgent']->probability; // a value from 0.0 to 1.0
 ```
 
-Then you can omit `provider:`.
+Extract a value with Clairic:
 
-## Check that it works
+```php
+use Meirdick\WorkersAi\Extraction;
+use Meirdick\WorkersAi\Extraction\Number;
 
-The call returns text in `$response->text`. If it fails, see [Troubleshooting](/troubleshooting/).
+$invoice = Extraction::of('4 pallets at $250.00 each, shipping $80.00.')
+    ->field('total', new Number(instructions: 'Amount due including shipping', unit: 'USD'))
+    ->extract();
 
-Common first errors:
+$invoice['total']->value();
+```
+
+## 4. Check that it works
+
+On the gateway route, open your gateway in the Cloudflare dashboard and go to Logs. Text calls show under `compat`.
+
+If a call fails, look for the start of the message in this table. See [Troubleshooting](/troubleshooting/) for the full list.
 
 | Message starts with | Cause |
 | --- | --- |
-| `Workers AI requires an API token` | `key` is empty. Check `CLOUDFLARE_AI_API_TOKEN`. |
-| `Workers AI requires an account_id or explicit url` | `account_id` is empty. Check `CLOUDFLARE_ACCOUNT_ID`. |
+| `Workers AI requires an API token` | `CLOUDFLARE_AI_API_TOKEN` is empty in `.env`. |
+| Workers AI requires an `account_id` or explicit `url` | `CLOUDFLARE_ACCOUNT_ID` is empty in `.env`. |
+| `HTTP request returned status code 401` | The token lacks the Workers AI Read permission, or the gateway is authenticated and `CLOUDFLARE_AI_GATEWAY_TOKEN` is empty. |
+
+## 5. Omit the provider name
+
+Laravel AI has one default for each kind of call. Set the defaults in `config/ai.php`, and you can omit `provider:`:
+
+```php
+'default' => 'workers-ai',
+'default_for_embeddings' => 'workers-ai',
+'default_for_classification' => 'workers-ai',
+```
+
+Laravel AI's `default_for_classification` is `typesafe` until you change it. A Clef call with no `provider:` goes to TypeSafe until then, and `Str::decide()` does too. `Extraction` finds the `workers-ai` provider without a default.
 
 ## Next steps
 
-- Classify with Clef, or extract values with Clairic. See [Decisions and extraction](/guides/decisions/).
-- Already on the direct route. Switch to the gateway with the steps in [AI Gateway](/guides/ai-gateway/).
-- Pick a model. See [Models](/guides/models/).
-- Set `reasoning_effort`. See [Reasoning models](/guides/reasoning/).
+- Use [Clef](/system-one/clef/) for decisions and [Clairic](/system-one/clairic/) for typed values.
+- [Pick a model](/guides/models/), and set [`reasoning_effort`](/guides/reasoning/) for reasoning models.
+- Move to the gateway later with [AI Gateway](/guides/ai-gateway/).

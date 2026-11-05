@@ -7,4 +7,8 @@ cp -r dist/. .deploy/docs/
 sed 's#^/_astro/\*#/docs/_astro/*#' .deploy/docs/_headers > .deploy/_headers
 rm .deploy/docs/_headers
 cp .deploy/docs/404.html .deploy/404.html
-printf '/ /docs/ 302\n' > .deploy/_redirects
+{
+  printf '/ /docs/ 302\n'
+  printf '/docs/guides/decisions /docs/system-one/clef/ 301\n'
+  printf '/docs/guides/decisions/ /docs/system-one/clef/ 301\n'
+} > .deploy/_redirects

@@ -5,7 +5,29 @@ sidebar:
   order: 1
 ---
 
-Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name is your choice. The `driver` value is `workers-ai`.
+Secrets and values that change per environment go in your application's `.env` file. Other package settings go in `config/ai.php`, under `providers.workers-ai`. Laravel AI's own keys, such as `default_for_classification`, are at the top level of that file. You choose the provider name. The `driver` value is `workers-ai`.
+
+## Environment variables
+
+Add the variables your route needs to your application's `.env` file:
+
+```ini
+CLOUDFLARE_AI_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_AI_GATEWAY=
+CLOUDFLARE_AI_GATEWAY_TOKEN=
+CLOUDFLARE_AI_URL=
+```
+
+| Variable | Config key | Needed for |
+| --- | --- | --- |
+| `CLOUDFLARE_AI_API_TOKEN` | `key` | All routes |
+| `CLOUDFLARE_ACCOUNT_ID` | `account_id` | All routes except a custom URL |
+| `CLOUDFLARE_AI_GATEWAY` | `gateway` | The gateway route |
+| `CLOUDFLARE_AI_GATEWAY_TOKEN` | `gateway_token` | An authenticated gateway |
+| `CLOUDFLARE_AI_URL` | `url` | A custom URL |
+
+The package does not read these variables by itself. Each one takes effect when `config/ai.php` reads it with `env()`, as in the example below. These names are a convention, so you can use others. See [Direct and gateway routes](/concepts/routes/) for what each route needs.
 
 ## Full example
 
@@ -45,6 +67,7 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
             ],
         ],
     ],
+],
 ```
 
 ## Connection
@@ -52,16 +75,16 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
 | `driver` | string | none | Required. `workers-ai`. |
-| `key` | string | none | Required. Cloudflare API token with the `Workers AI: Read` permission. The old name `api_key` still works. If both are set, `key` wins. |
-| `account_id` | string | none | Cloudflare account ID. Required unless you set `url`. A 32-character hex string. Not a URL. |
-| `gateway` | string | none | AI Gateway slug. Sends requests through the gateway. |
+| `key` | string | none | Required. A Cloudflare API token with the permission named Account > Workers AI > Read in the dashboard. The old name `api_key` still works. If both are set, `key` wins. |
+| `account_id` | string | none | Cloudflare account ID. Required unless you set `url`. Use the 32-character hex string, not a URL. |
+| `gateway` | string | none | AI Gateway slug. Sends requests through the gateway. Clef and Clairic send it as the `cf-aig-gateway-id` header. |
 | `gateway_path` | string | `compat` | Path after the gateway slug. Set `workers-ai/v1` for the provider path. Used only with `gateway`. |
-| `gateway_token` | string | none | Optional. Only for an authenticated gateway on `gateway.ai.cloudflare.com`. Sent as `cf-aig-authorization`. Not used by Clef or Clairic, which call `api.cloudflare.com`. |
-| `url` | string | none | Full endpoint URL. Do not set it with `account_id`. The package throws if both are set. |
+| `gateway_token` | string | none | Optional. An AI Gateway token with Run permission. Needed only for chat and embeddings on an authenticated gateway. Sent as `cf-aig-authorization`. Cloudflare does not need it for Clef and Clairic, but the package still sends it if you set it. |
+| `url` | string | none | Full endpoint URL. Do not set it with `account_id`. The package throws if both are set. For Clef and Clairic, the package derives the `/ai/run` URL from it. A `/compat` URL throws for those two. |
 | `session_affinity` | string | none | Value for the `x-session-affinity` header. |
 | `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. Also receives headers set with `Provider::withHeaders()` on `laravel/ai` 1.x. |
 
-The package resolves the endpoint in this order: `url`, then `account_id` with `gateway`, then `account_id` alone. See [How it works](/concepts/how-it-works/).
+The package resolves the endpoint in this order: `url`, then `account_id` with `gateway`, then `account_id` alone. See [Routes](/concepts/routes/).
 
 ## Generation
 
@@ -79,6 +102,18 @@ The package resolves the endpoint in this order: `url`, then `account_id` with `
 | `models.classification.cheapest` | string | `@cf/cloudflare/clef-flash` | Returned by `cheapestClassificationModel()`. Not selected automatically. |
 | `models.extraction.default` | string | `@cf/cloudflare/clairic` | Clairic model for `Extraction::of()->extract()` when the call names none. |
 
+## Default classification provider
+
+This key belongs to Laravel AI, not to this package. Set it in `config/ai.php` at the top level, next to `default`.
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `ai.default_for_classification` | string | `typesafe` | The provider that `Classification::of()->classify()` and `Str::decide()` use when you name none. Set it to `workers-ai` to run them on Clef. |
+
+```php
+'default_for_classification' => 'workers-ai',
+```
+
 ## Failure handling
 
 | Key | Type | Default | Description |
@@ -89,23 +124,11 @@ The package resolves the endpoint in this order: `url`, then `account_id` with `
 | `retry_attempts` | int | `3` | Total attempts, including the first. |
 | `retry_rate_limited` | bool | `true` | `false` makes an HTTP 429 fail at once. |
 
-## Environment variables
-
-The package reads no environment variables by itself. The names below are the ones used in the examples. Your `config/ai.php` reads them with `env()`.
-
-| Variable | Used for |
-| --- | --- |
-| `CLOUDFLARE_AI_API_TOKEN` | `key` |
-| `CLOUDFLARE_ACCOUNT_ID` | `account_id` |
-| `CLOUDFLARE_AI_GATEWAY` | `gateway` |
-| `CLOUDFLARE_AI_GATEWAY_TOKEN` | `gateway_token` |
-| `CLOUDFLARE_AI_URL` | `url` |
-
 ## Per-agent settings
 
 | Setting | Where | Description |
 | --- | --- | --- |
-| `#[ReasoningEffort(ReasoningEffort::LOW)]` | Agent class | Sets `reasoning_effort` for this agent. Beats the config value. |
+| `#[ReasoningEffort(ReasoningEffort::LOW)]` | Agent class | Sets `reasoning_effort` for this agent. Beats the config value. Import `Meirdick\WorkersAi\Attributes\ReasoningEffort`. |
 | `#[MaxTokens(n)]` | Agent class | Sets the token cap. Beats `default_max_tokens`. |
 | `#[Timeout(n)]` | Agent class | Sets the request timeout in seconds. |
 | `#[Strict]` | Agent class | Sends `strict: true` with the JSON schema. |
@@ -113,4 +136,4 @@ The package reads no environment variables by itself. The names below are the on
 
 ## Provider names
 
-The service provider registers the driver as `workers-ai`.
+The service provider registers the driver as `workers-ai`. It also registers the alias `workersai`, so a provider entry with `'driver' => 'workersai'` works too.

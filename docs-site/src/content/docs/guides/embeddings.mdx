@@ -5,7 +5,7 @@ sidebar:
   order: 5
 ---
 
-Use the `Embeddings` class from Laravel AI:
+Call the `Embeddings` class from Laravel AI:
 
 ```php
 use Laravel\Ai\Embeddings;
@@ -19,11 +19,11 @@ $response->tokens;                // laravel/ai 0.9 to 0.11: total tokens
 $response->usage->inputTokens;    // laravel/ai 1.x: total tokens
 ```
 
-Without `model:`, the package uses `@cf/baai/bge-large-en-v1.5`. Change the default with `models.embeddings.default`.
+With no `model:`, the package uses `@cf/baai/bge-large-en-v1.5`. Change the default with `models.embeddings.default`.
 
 ## Pass extra request fields
 
-Use `withProviderOptions()`:
+To add request fields, call `withProviderOptions()`:
 
 ```php
 Embeddings::for(['hello'])
@@ -33,12 +33,12 @@ Embeddings::for(['hello'])
 
 Before `laravel/ai` 0.9, the method was `providerOptions()`.
 
-The package keeps control of `model` and `input`. It removes these keys from your options.
+The package owns `model` and `input`. It removes these two keys from your options.
 
 ## Dimensions
 
-The config key `models.embeddings.dimensions` defaults to `1024`. The package reports this value to Laravel AI. It does not send it to Cloudflare. The vector size comes from the model. If you change the model, set `dimensions` to match it, so your vector storage uses the right size.
+The config key `models.embeddings.dimensions` defaults to `1024`. The package reports this value to Laravel AI but does not send it to Cloudflare. The model sets the real vector size. When you change the model, set `dimensions` to the new size. Otherwise a vector column sized from this value will not match your vectors.
 
 ## Gateway note
 
-Embeddings through the AI Gateway provider path `workers-ai/v1` can return `401 Authentication error` on a gateway with Authenticated Gateway turned on. The default `/compat` path does not have this problem. See [How it works](/concepts/how-it-works/).
+Embeddings on the gateway provider path `workers-ai/v1` can return `401 Authentication error` when the gateway has Authenticated Gateway on. The default `/compat` path does not. Remove `gateway_path` to use `/compat`. See [Routes](/concepts/routes/).
