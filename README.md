@@ -1,6 +1,6 @@
 # laravel-cf-workersai
 
-A [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). Chat, tools, embeddings, reranking, images, speech, transcription, and the System One models Cloudflare hosts: [Clef](https://developers.cloudflare.com/workers-ai/models/clef/) for decisions and [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/) for typed extraction. Works against the direct Workers AI API and through [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
+[Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) provider for the [Laravel AI SDK](https://github.com/laravel/ai): text, embeddings, reranking, images, speech, transcription, [Clef](https://developers.cloudflare.com/workers-ai/models/clef/) decisions and [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/) typed extraction, with [AI Gateway](https://developers.cloudflare.com/ai-gateway/) routing.
 
 Docs: [laravel-cf-workersai-docs.mdick85.workers.dev/docs](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/)
 

@@ -11,7 +11,7 @@ const nimbusConfig = defineNimbusConfig({
   site: "https://laravel-cf-workersai-docs.mdick85.workers.dev",
   title: "laravel-cf-workersai",
   description:
-    "Documentation for laravel-cf-workersai, a Laravel AI provider for Cloudflare Workers AI and AI Gateway.",
+    "Documentation for laravel-cf-workersai: Cloudflare Workers AI provider for the Laravel AI SDK, with Clef decisions, Clairic typed extraction and AI Gateway routing.",
   locale: "en",
   // GitHub link in the header.
   github: "https://github.com/meirdick/laravel-cf-workersai",
