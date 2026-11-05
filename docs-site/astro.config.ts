@@ -19,7 +19,6 @@ const nimbusConfig = defineNimbusConfig({
   // The home page leads the sidebar; every other page joins it automatically.
   sidebar: {
     items: [
-      "index",
       "quickstart",
       { label: "Concepts", autogenerate: { directory: "concepts" } },
       { label: "Guides", autogenerate: { directory: "guides" } },

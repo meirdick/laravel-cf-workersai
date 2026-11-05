@@ -7,7 +7,8 @@ sidebar:
 
 ## Limits
 
-- Text, embeddings and image input only.
+- Text, embeddings, Clef classification, Clairic extraction and image input.
+- Clef and Clairic do not use the `/compat` path. A `url` that ends in `/compat` throws for those calls.
 - No document, audio or video attachments.
 - No Laravel AI provider tools.
 - No request concurrency limit. The package retries HTTP 429. It does not prevent it.
@@ -34,6 +35,7 @@ Use this package when you need one or more of these:
 - Neuron figures for cost tracking.
 - Automatic retry of HTTP 429 and of Cloudflare edge errors.
 - An AI Gateway with Authenticated Gateway turned on.
+- Clef decisions and Clairic extraction. The built-in driver has neither.
 
 ### Which token permission do I need?
 

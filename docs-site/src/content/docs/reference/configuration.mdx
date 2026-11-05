@@ -56,7 +56,7 @@ Set all keys in `config/ai.php`, under `providers.workers-ai`. The provider name
 | `account_id` | string | none | Cloudflare account ID. Required unless you set `url`. A 32-character hex string. Not a URL. |
 | `gateway` | string | none | AI Gateway slug. Sends requests through the gateway. |
 | `gateway_path` | string | `compat` | Path after the gateway slug. Set `workers-ai/v1` for the provider path. Used only with `gateway`. |
-| `gateway_token` | string | none | Token for an AI Gateway with Authenticated Gateway on. Sent as `cf-aig-authorization: Bearer <token>`. |
+| `gateway_token` | string | none | Optional. Only for an authenticated gateway on `gateway.ai.cloudflare.com`. Sent as `cf-aig-authorization`. Not used by Clef or Clairic, which call `api.cloudflare.com`. |
 | `url` | string | none | Full endpoint URL. Do not set it with `account_id`. The package throws if both are set. |
 | `session_affinity` | string | none | Value for the `x-session-affinity` header. |
 | `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. Also receives headers set with `Provider::withHeaders()` on `laravel/ai` 1.x. |

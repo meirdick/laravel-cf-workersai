@@ -1,49 +1,46 @@
 ---
-title: Overview
-description: Use Cloudflare Workers AI as a Laravel AI provider.
+title: Workers AI for Laravel
+description: A Laravel AI provider for Cloudflare Workers AI, including Clef decisions and Clairic extraction.
 sidebar:
-  order: 0
+  hidden: true
+mode: custom
 ---
 
-laravel-cf-workersai adds Cloudflare Workers AI as a provider for [Laravel AI](https://github.com/laravel/ai) (`laravel/ai`). Run open-weight models from Meta, OpenAI, Moonshot and others on Cloudflare, with the Laravel AI code you already write.
+<div class="mx-auto max-w-3xl px-6 py-16">
 
-```php
-use function Laravel\Ai\agent;
+<p class="text-sm font-medium text-muted-foreground">Laravel AI + Cloudflare Workers AI</p>
 
-$response = agent('You are a helpful assistant.')->prompt('Say hi.', provider: 'workers-ai');
-echo $response->text;
-```
+<h1 class="mt-3 text-4xl font-semibold tracking-tight text-balance">Run Workers AI from the Laravel code you already write.</h1>
 
-## Why use it
+<p class="mt-4 text-lg text-muted-foreground text-pretty">One provider for chat, embeddings, tools, and the System One models Cloudflare hosts. Clef decides. Clairic extracts. Both work direct and through AI Gateway.</p>
 
-- **Same Laravel AI code.** Set the provider to `workers-ai`. Agents, tools and structured output work as with any other provider.
-- **Pay for what you use.** Cloudflare bills Workers AI by usage, in neurons. The package reports neuron usage, so you can track cost.
-- **Handles Cloudflare's quirks.** A default token cap stops answers being cut at 256 tokens. An empty answer throws an exception instead of returning nothing. Rate limits and edge errors are retried.
+<div class="mt-8 flex flex-wrap gap-3">
+  <LinkButton href="/quickstart/" variant="primary">Quickstart</LinkButton>
+  <LinkButton href="/guides/decisions/" variant="secondary">Clef and Clairic</LinkButton>
+  <LinkButton href="https://github.com/meirdick/laravel-cf-workersai" variant="minimal">GitHub</LinkButton>
+</div>
 
-## Features
+<pre class="mt-10 overflow-x-auto rounded-lg border border-border bg-muted/40 p-4 text-sm"><code>composer require meirdick/laravel-cf-workersai</code></pre>
 
-- Text generation, streaming, tool calls and structured output.
-- Embeddings.
-- Image input for vision models.
-- Direct Workers AI API or Cloudflare AI Gateway.
-- `reasoning_effort` for reasoning models.
-- Clef decisions through Laravel AI's classification API, and Clairic extraction.
-
-Needs PHP `^8.3` and `laravel/ai` 0.9 to 1.3. Upgrading from 0.8.x? See [Upgrade to 1.0](/guides/upgrade/).
-
-## Next steps
-
-<CardGrid>
-  <Card title="Quickstart" href="/quickstart/">
-    Install the package and make a first call.
+<div class="mt-14 grid gap-4 sm:grid-cols-3">
+  <Card title="Same Laravel AI calls" href="/quickstart/">
+    `agent()`, tools, streaming and embeddings. Set the provider to `workers-ai`.
   </Card>
-  <Card title="How it works" href="/concepts/how-it-works/">
-    Workers AI, AI Gateway and Laravel AI.
+  <Card title="Clef and Clairic" href="/guides/decisions/">
+    Decisions through `Classification`. Typed extraction through `Extraction::of()`.
   </Card>
-  <Card title="Limits and FAQ" href="/limits-and-faq/">
-    What it does not do, and when the built-in driver is enough.
+  <Card title="Direct or AI Gateway" href="/guides/ai-gateway/">
+    `account_id` alone, or add `gateway` for logs, cache and cost.
   </Card>
-  <Card title="Troubleshooting" href="/troubleshooting/">
-    Errors, causes and fixes.
-  </Card>
-</CardGrid>
+</div>
+
+## What you get
+
+- A default token cap, so answers are not cut at 256 tokens.
+- An exception when a reasoning model returns nothing.
+- `reasoning_effort`, and neuron figures for what Cloudflare bills.
+- Retries for HTTP 429 and Cloudflare edge errors.
+
+Needs PHP 8.3 and `laravel/ai` 0.9 to 1.3. Clef needs `laravel/ai` 1.0 or later.
+
+</div>

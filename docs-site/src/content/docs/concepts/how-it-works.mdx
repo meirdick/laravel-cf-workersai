@@ -22,7 +22,9 @@ The package registers a driver in the Laravel AI manager. It registers two names
 | `workers-ai` | Primary name. |
 | `workersai` | Alias. |
 
-The provider has two gateways, both backed by one class: a text gateway and an embedding gateway. The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as in any other provider.
+The provider has a text gateway and an embedding gateway, both backed by one class. The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as in any other provider.
+
+On `laravel/ai` 1.0 and later the same provider also answers classification calls. Those go to Clef, not to the chat endpoint. Clairic extraction is a separate call. See [Decisions and extraction](/guides/decisions/).
 
 Anything you do with Laravel AI works on this provider. This includes `#[MaxTokens]`, `#[Timeout]`, `#[Provider]` and `Ai::fakeAgent()`.
 
@@ -33,6 +35,8 @@ The package picks an endpoint from your config. It checks the keys in this order
 1. `url` is set. All requests go to that URL.
 2. `account_id` and `gateway` are set. Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`.
 3. `account_id` is set. Requests go to `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1`.
+
+Chat and embeddings use those URLs. Clef and Clairic do not. They post to `/ai/run/{model}` on the same account. A configured `gateway` is sent as the `cf-aig-gateway-id` header, not as a `/compat` path. See [Decisions and extraction](/guides/decisions/).
 
 If you set both `url` and `account_id`, the package throws. Pick one.
 

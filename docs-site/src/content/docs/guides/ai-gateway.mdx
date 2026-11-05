@@ -32,16 +32,18 @@ Use only the slug. If you give a URL or a value with a slash, the package throws
 
 A gateway with Authenticated Gateway turned on needs a second token. Cloudflare reads it from the `cf-aig-authorization` header. Your Workers AI token still goes in `Authorization`.
 
-Set `gateway_token`:
+Set `gateway_token`. It is optional. Omit it unless this gateway has Authenticated Gateway on:
 
 ```php
 'workers-ai' => [
     // ...
-    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'), // optional; authenticated gateway.ai.cloudflare.com only
 ],
 ```
 
-The package sends `cf-aig-authorization: Bearer <gateway_token>` on chat, streaming and embeddings. If you leave `gateway_token` empty, the package sends no header.
+The package sends `cf-aig-authorization: Bearer <gateway_token>` on chat, streaming and embeddings. Those go to `gateway.ai.cloudflare.com`. If you leave `gateway_token` empty, the package sends no header.
+
+Clef and Clairic do not use that host. They call `api.cloudflare.com` and name the gateway with `cf-aig-gateway-id`. For those calls, `key` is the only token. `gateway_token` is not sent as their credential.
 
 Without the header, an authenticated gateway returns HTTP 401 with `{"code":10000,"message":"Authentication error"}`. Laravel throws `Illuminate\Http\Client\RequestException`. This message does not name the gateway or the header.
 
