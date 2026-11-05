@@ -192,3 +192,18 @@ test('structured state reaches clef', function () {
 
     Http::assertSent(fn (Request $request): bool => $request->data()['state']['subject'] === 'Refund');
 });
+
+test('clef reports neurons from the header', function () {
+    \Illuminate\Support\Facades\Event::fake([\Meirdick\WorkersAi\Events\WorkersAiUsageReported::class]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(clefBody(), 200, ['cf-ai-neurons' => '0.49'])]);
+
+    Classification::of('A ticket.')
+        ->question('decision', new Boolean('Urgent?'))
+        ->classify(provider: 'workers-ai');
+
+    \Illuminate\Support\Facades\Event::assertDispatched(
+        \Meirdick\WorkersAi\Events\WorkersAiUsageReported::class,
+        fn ($event) => $event->neurons === 0.49 && $event->promptTokens === 12,
+    );
+});

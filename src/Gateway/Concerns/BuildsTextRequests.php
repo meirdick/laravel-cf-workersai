@@ -35,7 +35,7 @@ trait BuildsTextRequests
     ): array {
         $body = [
             'model' => $model,
-            'messages' => $this->mapMessagesToChat($messages, $instructions),
+            'messages' => $this->mapMessagesToChat($this->withConvertedDocuments($provider, $messages), $instructions),
         ];
 
         if (filled($tools)) {

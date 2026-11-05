@@ -18,10 +18,13 @@ use Laravel\Ai\Files\Image;
 use Laravel\Ai\Providers\Provider;
 use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\RunEndpoint;
+use Meirdick\WorkersAi\Events\WorkersAiUsageReported;
 use Meirdick\WorkersAi\Exceptions\GatewayTimeoutException;
 
 /**
- * Posts a Clef or Clairic request to Workers AI `/ai/run/{model}`.
+ * Sends a request to Workers AI `/ai/run/{model}`.
+ *
+ * Clef, Clairic, images, audio, transcription and reranking all use this path.
  *
  * Shares the chat client's auth, retry and header rules. The URL is not the
  * chat base: `/compat` and `/ai/v1` do not serve these models.
@@ -38,20 +41,30 @@ trait PostsWorkersAiRun
     ];
 
     /**
-     * Post to the run endpoint and return the model's own reply.
+     * Post JSON to the run endpoint and return the model's own reply.
      *
      * @param  array<string, mixed>  $body
+     * @param  string|null  $required  a key the reply must hold
      * @return array{0: array<string, mixed>, 1: Response}
      */
-    protected function postRun(Provider $provider, string $model, int $timeout, array $body): array
+    protected function postRun(Provider $provider, string $model, int $timeout, array $body, ?string $required = 'answers'): array
+    {
+        $response = $this->sendRun($provider, $model, $timeout, fn (PendingRequest $client, string $url) => $client->post($url, $body));
+
+        return [$this->runPayload($response, $required), $response];
+    }
+
+    /**
+     * Send a run request, with the shared error mapping and neuron report.
+     *
+     * @param  \Closure(PendingRequest, string): Response  $send
+     */
+    protected function sendRun(Provider $provider, string $model, int $timeout, \Closure $send): Response
     {
         [$client, $url] = $this->runRequest($provider, $model, $timeout);
 
         try {
-            $response = $this->mapFailoverErrors(
-                $provider->name(),
-                fn () => $client->post($url, $body),
-            );
+            $response = $this->mapFailoverErrors($provider->name(), fn () => $send($client, $url));
         } catch (RequestException $exception) {
             if ($exception->response?->status() === 408) {
                 throw GatewayTimeoutException::forProvider($provider->name(), $exception->getCode(), $exception);
@@ -60,7 +73,47 @@ trait PostsWorkersAiRun
             throw $exception;
         }
 
-        return [$this->runPayload($response), $response];
+        $this->reportRunNeurons($provider, $model, $response);
+
+        return $response;
+    }
+
+    /**
+     * Report the neurons of a run call.
+     *
+     * JSON replies can hold `usage.neurons`. Every reply measured on 2026-11-05
+     * had a `cf-ai-neurons` header, including binary audio and Clef.
+     */
+    protected function reportRunNeurons(Provider $provider, string $model, Response $response): void
+    {
+        $usage = $this->isBinaryResponse($response)
+            ? null
+            : ($response->json('result.usage') ?? $response->json('usage'));
+
+        $usage = is_array($usage) ? $usage : [];
+        $neurons = $usage['neurons'] ?? $response->header('cf-ai-neurons');
+
+        if (! is_numeric($neurons) || (float) $neurons <= 0) {
+            return;
+        }
+
+        $this->events->dispatch(new WorkersAiUsageReported(
+            provider: $provider->name(),
+            model: $model,
+            neurons: (float) $neurons,
+            promptTokens: (int) ($usage['prompt_tokens'] ?? $usage['input_tokens'] ?? 0),
+            completionTokens: (int) ($usage['completion_tokens'] ?? $usage['output_tokens'] ?? 0),
+        ));
+    }
+
+    /**
+     * Whether the body is the output itself, not a JSON reply.
+     */
+    protected function isBinaryResponse(Response $response): bool
+    {
+        $type = strtolower((string) $response->header('Content-Type'));
+
+        return str_starts_with($type, 'image/') || str_starts_with($type, 'audio/') || str_starts_with($type, 'application/octet-stream');
     }
 
     /**
@@ -69,12 +122,12 @@ trait PostsWorkersAiRun
      * The REST API wraps a reply in `{result, success, errors: []}`, measured
      * 2026-11-05 on Clef and Clairic, direct and with a gateway header.
      * Cloudflare's model pages show it without the wrapper, which is what a
-     * Workers binding returns, so both are read. A reply with no `answers`
-     * throws. An empty response would look like a model with nothing to say.
+     * Workers binding returns, so both are read. A reply without the required
+     * key throws. An empty response would look like a model with nothing to say.
      *
      * @return array<string, mixed>
      */
-    protected function runPayload(Response $response): array
+    protected function runPayload(Response $response, ?string $required = 'answers'): array
     {
         $data = $response->json();
 
@@ -88,8 +141,10 @@ trait PostsWorkersAiRun
 
         $payload = is_array($data['result'] ?? null) ? $data['result'] : $data;
 
-        if (! is_array($payload['answers'] ?? null)) {
-            throw new AiException('Workers AI Error: Response contained no answers.');
+        if ($required !== null && ! isset($payload[$required])) {
+            $name = ['answers' => 'answers', 'response' => 'rankings'][$required] ?? $required;
+
+            throw new AiException("Workers AI Error: Response contained no {$name}.");
         }
 
         return $payload;
