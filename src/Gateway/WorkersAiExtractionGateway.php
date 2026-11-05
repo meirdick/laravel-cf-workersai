@@ -5,18 +5,14 @@ declare(strict_types=1);
 namespace Meirdick\WorkersAi\Gateway;
 
 use Illuminate\Contracts\Events\Dispatcher;
-use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\UploadedFile;
 use InvalidArgumentException;
-use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Files\File;
 use Laravel\Ai\Providers\Provider;
 use Laravel\Ai\Responses\Data\Meta;
 use Meirdick\WorkersAi\Cloudflare\ClairicModel;
-use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\RunEndpoint;
 use Meirdick\WorkersAi\Cloudflare\SdkCompat;
-use Meirdick\WorkersAi\Exceptions\GatewayTimeoutException;
 use Meirdick\WorkersAi\Extraction\Field;
 use Meirdick\WorkersAi\Gateway\Concerns\MapsFailoverErrors;
 use Meirdick\WorkersAi\Gateway\Concerns\PostsWorkersAiRun;
@@ -27,8 +23,7 @@ use Meirdick\WorkersAi\Responses\ExtractionResponse;
  * One Clairic call.
  *
  * The body is `{model, state, fields}` plus optional images and a reference
- * date. The response is one answer per field. A 200 that still carries an
- * error envelope throws `AiException`, the same rule the chat path uses.
+ * date. The response is one answer per field.
  */
 class WorkersAiExtractionGateway
 {
@@ -78,26 +73,11 @@ class WorkersAiExtractionGateway
             $body['images'] = $this->runImages($attachments, 'Clairic');
         }
 
-        [$client, $url] = $this->runRequest($provider, $model, $timeout);
-
-        $response = $this->withErrorHandling(
-            $provider->name(),
-            fn () => $client->post($url, $body),
-        );
-
-        $data = $response->json();
-
-        if (! is_array($data) || ErrorEnvelope::isErrorPayload($data)) {
-            throw new AiException(sprintf(
-                'Workers AI Error: [%s] %s',
-                ErrorEnvelope::extractType(is_array($data) ? $data : null),
-                ErrorEnvelope::extract(is_array($data) ? $data : null),
-            ));
-        }
+        [$data, $response] = $this->postRun($provider, $model, $timeout, $body);
 
         $answers = [];
 
-        foreach ($data['answers'] ?? [] as $name => $answer) {
+        foreach ($data['answers'] as $name => $answer) {
             if (is_array($answer)) {
                 $answers[(string) $name] = new ExtractedValue($answer);
             }
@@ -108,6 +88,7 @@ class WorkersAiExtractionGateway
             (bool) ($data['truncated'] ?? false),
             SdkCompat::textUsage($this->usageWire(is_array($data['usage'] ?? null) ? $data['usage'] : null)),
             new Meta($provider->name(), is_string($data['model'] ?? null) ? $data['model'] : $model),
+            is_string($data['state_text'] ?? null) ? $data['state_text'] : null,
         );
 
         // 0.9's response objects have no raw response. Attaching one there
@@ -150,26 +131,5 @@ class WorkersAiExtractionGateway
             'prompt_tokens' => $usage['input_tokens'] ?? 0,
             'completion_tokens' => $usage['output_tokens'] ?? 0,
         ];
-    }
-
-    /**
-     * @template T
-     *
-     * @param  \Closure(): T  $callback
-     * @return T
-     */
-    protected function withErrorHandling(string $providerName, \Closure $callback): mixed
-    {
-        try {
-            return $this->mapFailoverErrors($providerName, $callback);
-        } catch (RequestException $exception) {
-            if ($exception->response?->status() === 408) {
-                throw GatewayTimeoutException::forProvider(
-                    $providerName, $exception->getCode(), $exception,
-                );
-            }
-
-            throw $exception;
-        }
     }
 }

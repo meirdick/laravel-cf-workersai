@@ -26,6 +26,10 @@ final class RunEndpoint
      */
     public static function resolve(array $config, string $model): array
     {
+        // Same rules and messages as chat: `url` with `account_id` throws, and
+        // a pasted URL in `account_id` or `gateway` throws.
+        BaseUrl::build($config);
+
         $model = self::bareModel($model);
         $accountId = self::nonEmpty($config['account_id'] ?? null);
         $gateway = self::nonEmpty($config['gateway'] ?? null);
@@ -36,12 +40,6 @@ final class RunEndpoint
                 'url' => "https://api.cloudflare.com/client/v4/accounts/{$accountId}/ai/run/{$model}",
                 'gateway' => $gateway,
             ];
-        }
-
-        if ($url === null) {
-            throw new InvalidArgumentException(
-                'Workers AI requires an `account_id` or explicit `url` to call Clef or Clairic.'
-            );
         }
 
         $base = rtrim($url, '/');

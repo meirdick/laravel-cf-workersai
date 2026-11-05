@@ -9,3 +9,5 @@
 /CHANGELOG.md      export-ignore
 /.wrangler         export-ignore
 /docs-site         export-ignore
+/.agents           export-ignore
+/HANDOFF.md        export-ignore

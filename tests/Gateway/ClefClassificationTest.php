@@ -171,6 +171,10 @@ test('a workers-ai prefix on the model is stripped, not sent', function () {
 });
 
 test('images go in the images field, not inside the state', function () {
+    if ((new ReflectionMethod(Classification::class, 'of'))->getNumberOfParameters() < 2) {
+        $this->markTestSkipped('Classification attachments arrived after laravel/ai 1.0.');
+    }
+
     if (! (new ReflectionMethod(ClassificationProvider::class, 'classify'))->getNumberOfParameters() >= 6) {
         $this->markTestSkipped('This laravel/ai version does not pass classification attachments.');
     }
@@ -193,6 +197,10 @@ test('images go in the images field, not inside the state', function () {
 });
 
 test('a fifth image is rejected before a request', function () {
+    if ((new ReflectionMethod(Classification::class, 'of'))->getNumberOfParameters() < 2) {
+        $this->markTestSkipped('Classification attachments arrived after laravel/ai 1.0.');
+    }
+
     if (! method_exists(Image::class, 'fromBase64')) {
         $this->markTestSkipped('Needs image attachments.');
     }

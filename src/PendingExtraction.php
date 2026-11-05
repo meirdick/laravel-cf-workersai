@@ -4,10 +4,15 @@ declare(strict_types=1);
 
 namespace Meirdick\WorkersAi;
 
+use Closure;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Traits\Conditionable;
 use InvalidArgumentException;
 use Laravel\Ai\AiManager;
+use Laravel\Ai\Events\ProviderFailedOver;
+use Laravel\Ai\Exceptions\FailoverableException;
 use Laravel\Ai\Files\File;
+use LogicException;
 use Meirdick\WorkersAi\Extraction\Field;
 use Meirdick\WorkersAi\Providers\WorkersAiProvider;
 use Meirdick\WorkersAi\Responses\ExtractionResponse;
@@ -23,15 +28,21 @@ use Meirdick\WorkersAi\Responses\ExtractionResponse;
  */
 class PendingExtraction
 {
+    use Conditionable;
+
     /** @var array<string, Field> */
     protected array $fields = [];
 
-    /** @var array<string, mixed> */
-    protected array $providerOptions = [];
+    /** @var array<string, mixed>|Closure(WorkersAiProvider): ?array<string, mixed> */
+    protected array|Closure $providerOptions = [];
+
+    /** @var array<string, string> */
+    protected array $headers = [];
 
     protected ?string $referenceDate = null;
 
-    protected ?string $provider = null;
+    /** @var string|array<int|string, mixed>|null */
+    protected string|array|null $provider = null;
 
     protected ?string $model = null;
 
@@ -75,16 +86,36 @@ class PendingExtraction
     }
 
     /**
-     * @param  array<string, mixed>  $options
+     * Add body options, or give a closure that returns them for a provider.
+     *
+     * @param  array<string, mixed>|Closure(WorkersAiProvider): ?array<string, mixed>  $options
      */
-    public function withProviderOptions(array $options): self
+    public function withProviderOptions(array|Closure $options): self
     {
-        $this->providerOptions = [...$this->providerOptions, ...$options];
+        $this->providerOptions = is_array($options) && is_array($this->providerOptions)
+            ? [...$this->providerOptions, ...$options]
+            : $options;
 
         return $this;
     }
 
-    public function provider(string $provider): self
+    /**
+     * Add HTTP headers for this call. Needs laravel/ai 1.x, which added
+     * `Provider::withHeaders()`. On 0.9 to 0.11 use the `headers` config key.
+     *
+     * @param  array<string, string>  $headers
+     */
+    public function withHeaders(array $headers): self
+    {
+        $this->headers = [...$this->headers, ...$headers];
+
+        return $this;
+    }
+
+    /**
+     * @param  string|array<int|string, mixed>  $provider
+     */
+    public function provider(string|array $provider): self
     {
         $this->provider = $provider;
 
@@ -106,32 +137,93 @@ class PendingExtraction
     }
 
     /**
+     * Send the extraction.
+     *
+     * Give a list of providers to fail over, the same way
+     * `Classification::of()->classify()` does: `['workers-ai', 'backup']`, or
+     * `['workers-ai' => '@cf/cloudflare/clairic']` to name a model for each.
+     *
+     * @param  string|array<int|string, mixed>|null  $provider
      * @param  array<string, mixed>  $providerOptions
+     *
+     * @throws FailoverableException if every provider fails.
      */
-    public function extract(?string $provider = null, ?string $model = null, int $timeout = 30, array $providerOptions = []): ExtractionResponse
+    public function extract(string|array|null $provider = null, ?string $model = null, ?int $timeout = null, array $providerOptions = []): ExtractionResponse
     {
         if ($this->fields === []) {
             throw new InvalidArgumentException('Clairic needs at least one field. Call field() or fields() before extract().');
         }
 
-        $resolved = $this->resolveProvider($provider ?? $this->provider);
+        $lastException = null;
 
-        return $resolved->extract(
-            $this->state,
-            $this->fields,
-            $model ?? $this->model,
-            $timeout === 30 ? $this->timeout : $timeout,
-            [...$this->providerOptions, ...$providerOptions],
-            $this->attachments,
-            $this->referenceDate,
-        );
+        foreach ($this->providerList($provider ?? $this->provider, $model ?? $this->model) as $name => $candidateModel) {
+            $resolved = $this->resolveProvider($name);
+
+            try {
+                return $this->withCallHeaders($resolved)->extract(
+                    $this->state,
+                    $this->fields,
+                    $candidateModel,
+                    $timeout ?? $this->timeout,
+                    [...$this->resolveProviderOptions($resolved), ...$providerOptions],
+                    $this->attachments,
+                    $this->referenceDate,
+                );
+            } catch (FailoverableException $exception) {
+                $lastException = $exception;
+
+                event(new ProviderFailedOver($resolved, $candidateModel ?? $resolved->defaultExtractionModel(), $exception));
+            }
+        }
+
+        throw $lastException;
     }
 
-    protected function resolveProvider(?string $name): WorkersAiProvider
+    /**
+     * @param  string|array<int|string, mixed>|null  $provider
+     * @return array<string, ?string>
+     */
+    protected function providerList(string|array|null $provider, ?string $model): array
     {
-        $manager = app(AiManager::class);
+        if (is_array($provider)) {
+            $list = [];
 
-        $instance = $manager->instance($name ?? $this->defaultProviderName());
+            foreach ($provider as $key => $value) {
+                is_int($key) ? $list[(string) $value] = $model : $list[$key] = $value;
+            }
+
+            return $list;
+        }
+
+        return [$provider ?? $this->defaultProviderName() => $model];
+    }
+
+    protected function withCallHeaders(WorkersAiProvider $provider): WorkersAiProvider
+    {
+        if ($this->headers === []) {
+            return $provider;
+        }
+
+        if (! method_exists($provider, 'withHeaders')) {
+            throw new LogicException('withHeaders() needs laravel/ai 1.x. On earlier versions, set the `headers` config key.');
+        }
+
+        return $provider->withHeaders($this->headers);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function resolveProviderOptions(WorkersAiProvider $provider): array
+    {
+        return $this->providerOptions instanceof Closure
+            ? (($this->providerOptions)($provider) ?: [])
+            : $this->providerOptions;
+    }
+
+    protected function resolveProvider(string $name): WorkersAiProvider
+    {
+        $instance = app(AiManager::class)->instance($name);
 
         if (! $instance instanceof WorkersAiProvider) {
             throw new InvalidArgumentException(
