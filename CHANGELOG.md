@@ -6,6 +6,40 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-11-05
+
+Adds Cloudflare's other model types, through laravel/ai's own APIs.
+
+### Added
+
+- **Reranking.** `workers-ai` implements `RerankingProvider`, with `@cf/baai/bge-reranker-base`. `Reranking::of()`, `Collection::rerank()` and `Reranking::fake()` work.
+- **Image generation.** `workers-ai` implements `ImageProvider`. The default is `@cf/black-forest-labs/flux-2-klein-4b`. `size()`, `quality()` and up to 4 reference images. The gateway handles each request shape: multipart on `flux-2-*`, `steps` on `flux-1-schnell`, `num_steps` on the others, and JSON or binary replies.
+- **Speech.** `workers-ai` implements `AudioProvider`. The default is `@cf/deepgram/aura-2-en`. `male()`, `female()` and `voice()` map to speakers. MeloTTS also works.
+- **Transcription.** `workers-ai` implements `TranscriptionProvider`. The default is `@cf/openai/whisper-large-v3-turbo`. `@cf/deepgram/nova-3` adds `diarize()`. `whisper` and `whisper-tiny-en` also work.
+- **Documents.** `Meirdick\WorkersAi\Markdown::of($file)->convert()` calls `/ai/tomarkdown`. `convert_documents => true` converts document attachments on chat calls and adds the text to the message. It is off by default.
+- **Web search.** `Meirdick\WorkersAi\Tools\CloudflareWebSearch` is a normal tool that calls Cloudflare's Web Search API.
+- **`tests/Integration/LiveMediaTest.php`** asserts real output: decoded images, words in a transcript, text from a PDF.
+
+### Changed
+
+- **`WorkersAiUsageReported` fires on every `/ai/run` call.** Clef, Clairic and the new calls report neurons from `usage.neurons` or the `cf-ai-neurons` header. A listener that adds up spend now counts them. Docs said Clef and Clairic report no neurons. Measured 2026-11-05: Clef sends a `cf-ai-neurons` header.
+- **Attachment errors name the fix.** A document attachment names `convert_documents` and `Markdown::of()`. An audio or video attachment names `Transcription`, not documents. The exception class is unchanged.
+
+### Fixed
+
+- **Docs: provider tools.** The capability table said provider tools throw `RuntimeException`. On laravel/ai 1.1 and later, `TextGenerationLoop::toolsSupportedBy()` removes them first, so the call runs with no tools and no error. The docs now state both.
+
+### Notes
+
+- **FLUX.2 with a gateway uses the gateway's own URL.** Measured 2026-11-05: `/ai/run` with `cf-aig-gateway-id` answers multipart with `500 Invalid request body`, and `gateway.ai.cloudflare.com/.../workers-ai/{model}` accepts it. On an authenticated gateway, FLUX.2 needs `gateway_token`.
+- **Web search uses the `default` gateway.** Measured 2026-11-05: two named gateways with no stored key returned `400 web_search_byok_not_configured`, and `default` returned results.
+
+### Verified
+
+- laravel/ai v0.9.1: 286 passed, 106 skipped. v0.10.3: 289 passed, 103 skipped. v0.11.2: 289 passed, 103 skipped. v1.0.0: 316 passed, 76 skipped. v1.3.0: 319 passed, 73 skipped.
+- Live, 2026-11-05, on v1.3.0: 35 passed. On v1.0.0: 32 passed, 3 skipped. On v0.11.2: 28 passed, 7 skipped. Direct, through an AI Gateway, and with the gateway header. Skips are Clef on v0.11.2, and web search and third-party models, which ran on v1.3.0 only.
+- Not verified: an authenticated gateway. The gateways tested have authentication off. FLUX.2 on an authenticated gateway relies on `gateway_token`, which the package sends on that URL.
+
 ## [1.2.0] - 2026-11-05
 
 **Upgrade from 1.1.0.** Clef and Clairic fail on every live call in 1.1.0. This release fixes them and brings them level with the rest of laravel/ai.
@@ -20,7 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - **Clef and Clairic did not work in 1.1.0. They do now.** Cloudflare's REST API wraps each reply in `{result, success, errors: []}`. 1.1.0 read `answers` from the top level, so every live Clef call returned no answers, and `$response['urgent']` threw `No answer was returned`. Every live Clairic call threw `Workers AI Error: [unknown] Unknown error`, because `ErrorEnvelope::isErrorPayload()` treated `errors: []` as an error. The 1.1.0 unit tests used an unwrapped fake, and the 1.1.0 live check looked at the status code only. `runPayload()` now reads both shapes.
 - **Clef reports bad replies.** A 200 with an error or with no `answers` throws `AiException`. Before, it returned an empty `ClassificationResponse`. Clairic now also throws on a reply with no `answers`. A 408 on Clef throws `GatewayTimeoutException`, as the docs said.
-- **Third-party and `@hf/` models on the direct API.** 1.1.0's post-release commit rejected any model that does not start with `@cf/`. Cloudflare's REST API serves `openai/gpt-5.5` on `/ai/v1`, and `@hf/` models are Workers AI models. `@hf/` IDs also gain the `workers-ai/` prefix on `/compat`.
+- **Third-party models on the direct API.** 1.1.0's post-release commit rejected any model that does not start with `@cf/`. Cloudflare's REST API serves `openai/gpt-5.5` on `/ai/v1`.
 - **Clef and Clairic validate config as chat does.** `url` with `account_id` throws, and a pasted URL in `account_id` or `gateway` throws. Before, the run endpoint ignored `url` silently.
 - **`extract(timeout: 30)` overrides `timeout(45)`.** Before, the value 30 could not override an earlier call.
 

@@ -1,6 +1,6 @@
 # laravel-cf-workersai
 
-A [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). Chat, embeddings, tools, and the System One models Cloudflare hosts: [Clef](https://developers.cloudflare.com/workers-ai/models/clef/) for decisions and [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/) for typed extraction. Works against the direct Workers AI API and through [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
+A [Laravel AI](https://github.com/laravel/ai) provider for [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). Chat, tools, embeddings, reranking, images, speech, transcription, and the System One models Cloudflare hosts: [Clef](https://developers.cloudflare.com/workers-ai/models/clef/) for decisions and [Clairic](https://developers.cloudflare.com/workers-ai/models/clairic/) for typed extraction. Works against the direct Workers AI API and through [AI Gateway](https://developers.cloudflare.com/ai-gateway/).
 
 Docs: [laravel-cf-workersai-docs.mdick85.workers.dev/docs](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/)
 
@@ -86,6 +86,27 @@ $invoice['total']->value();
 
 Both models work on the direct route and through a gateway, with the same provider entry. A `url` that ends in `/compat` cannot serve them, and the package throws.
 
+## Images, audio, reranking, documents and search
+
+These use Laravel AI's own APIs, or a small addition where it has none. They work on the direct route and through a gateway.
+
+```php
+use Laravel\Ai\Audio;
+use Laravel\Ai\Files\Document;
+use Laravel\Ai\Image;
+use Laravel\Ai\Reranking;
+use Laravel\Ai\Transcription;
+use Meirdick\WorkersAi\Markdown;
+use Meirdick\WorkersAi\Tools\CloudflareWebSearch;
+
+Image::of('A green apple.')->landscape()->generate(provider: 'workers-ai');
+Audio::of('Your order has shipped.')->generate(provider: 'workers-ai');
+Transcription::fromPath($path)->generate(provider: 'workers-ai');
+Reranking::of($documents)->limit(5)->rerank($query, provider: 'workers-ai');
+Markdown::of(Document::fromPath('invoice.pdf'))->convert();
+agent(tools: [new CloudflareWebSearch])->prompt($question, provider: 'workers-ai', model: '@cf/openai/gpt-oss-120b');
+```
+
 ## Why this package
 
 laravel/ai's `openai-compatible` driver can call a Workers AI `/compat` URL. Use it if you send text to one model and every agent has `#[MaxTokens]`.
@@ -97,6 +118,7 @@ The rest of the reference is in the docs:
 - [Quickstart](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/quickstart/)
 - [Clef](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/system-one/clef/) and [Clairic](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/system-one/clairic/)
 - [Direct and gateway routes](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/concepts/routes/)
+- [Reranking](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/reranking/), [images](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/images/), [speech and transcription](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/audio/), [documents](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/documents/), [web search](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/web-search/)
 - [AI Gateway](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/ai-gateway/)
 - [Configuration](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/reference/configuration/)
 - [Upgrade to 1.0](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/upgrade/)
