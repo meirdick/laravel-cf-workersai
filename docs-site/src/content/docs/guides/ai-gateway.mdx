@@ -1,77 +1,128 @@
 ---
 title: AI Gateway
-description: Route Workers AI requests through Cloudflare AI Gateway, including Authenticated Gateway, session affinity and cached tokens.
+description: Set up AI Gateway, Authenticated Gateway and third-party models, and use session affinity and cached tokens.
 sidebar:
   order: 8
 ---
 
-Cloudflare AI Gateway is a proxy for AI requests. It gives you request logs, cost analytics, caching and retries in the Cloudflare dashboard. You create and configure a gateway in the dashboard. The package only sends requests to it.
+Cloudflare AI Gateway is a proxy for AI requests. It adds request logs, cost analytics, caching and rate limits in the Cloudflare dashboard. You create and configure a gateway in the dashboard. The package only sends requests to it.
+
+To compare the gateway route with the direct route, see [Direct and gateway routes](/concepts/routes/).
 
 ## Route requests through a gateway
 
-Create a gateway in the Cloudflare dashboard. Copy its slug. Put that slug in `.env`, not in `config/ai.php`:
+<Steps>
+  <Step title="Create a gateway">
+    In the Cloudflare dashboard, go to AI, then AI Gateway, then Create Gateway. Copy the gateway name. This name is the slug.
+  </Step>
+  <Step title="Add the slug to your .env file">
+    Add this line to your application's `.env` file:
 
-```env
-CLOUDFLARE_AI_GATEWAY=my-gateway
+    ```ini
+    CLOUDFLARE_AI_GATEWAY=my-gateway
+    ```
+  </Step>
+  <Step title="Read it in config/ai.php">
+    Add the `gateway` line to the provider entry. It reads the value from `.env`, so do not write the slug here.
+
+    ```php
+    'workers-ai' => [
+        'driver'     => 'workers-ai',
+        'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+        'gateway'    => env('CLOUDFLARE_AI_GATEWAY'),
+    ],
+    ```
+  </Step>
+  <Step title="Send a request and open the logs">
+    Your calling code does not change. Open the gateway in the dashboard and go to Logs. Text and embedding calls show under `compat`.
+  </Step>
+</Steps>
+
+Text and embedding calls go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`. Clef and Clairic calls go to `api.cloudflare.com` with a `cf-aig-gateway-id` header, and Cloudflare applies the gateway's features to them.
+
+Use only the slug. If you give a URL or a value with a slash, the package throws and tells you to use the `url` key.
+
+## Authenticated Gateway
+
+With Authenticated Gateway on, `gateway.ai.cloudflare.com` rejects a request that has no gateway token. To set it up:
+
+1. Open the gateway settings in the dashboard.
+2. Create an authentication token. This is the gateway token, and it has Run permission. Copy it.
+3. Turn on Authenticated Gateway.
+4. Add the token to your application's `.env` file:
+
+```ini
+CLOUDFLARE_AI_GATEWAY_TOKEN=your-gateway-token
 ```
 
-`config/ai.php` only reads that variable. It does not contain the slug:
+5. Read it in the provider entry in `config/ai.php`:
+
+```php
+'workers-ai' => [
+    // ...
+    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+],
+```
+
+The package sends `cf-aig-authorization: Bearer <gateway_token>`. Your `key` still goes in `Authorization`. If `gateway_token` is empty, the package does not send the header.
+
+Clef and Clairic do not need the gateway token. They call `api.cloudflare.com`, and [Cloudflare's docs](https://developers.cloudflare.com/ai-gateway/configuration/authentication/) say this API reads your API token from `Authorization`.
+
+Without the header, an authenticated gateway returns HTTP 401 with `{"code":10000,"message":"Authentication error"}`. Laravel throws `Illuminate\Http\Client\RequestException`. The message does not name the gateway or the header, so check `gateway_token` first.
+
+## Direct route with a gateway header
+
+Cloudflare's REST API on `api.cloudflare.com` also routes through a gateway. Send the `cf-aig-gateway-id` header on the direct route. It needs no `gateway` key and no second token. Cloudflare documents this for authenticated gateways too.
+
+Keep the slug in your application's `.env` file, as `CLOUDFLARE_AI_GATEWAY`, and read it in `config/ai.php`:
 
 ```php
 'workers-ai' => [
     'driver'     => 'workers-ai',
     'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
     'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
-    'gateway'    => env('CLOUDFLARE_AI_GATEWAY'), // the slug from .env
+    'headers'    => ['cf-aig-gateway-id' => env('CLOUDFLARE_AI_GATEWAY')],
 ],
 ```
 
-Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`. The dashboard shows them under `compat`.
+Text, Clef, Clairic and embeddings all returned HTTP 200 this way on 2026-11-05. Cloudflare's gateway docs list chat completions on this API, but not embeddings. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
-Use only the slug. If you give a URL or a value with a slash, the package throws and tells you to use the `url` key.
+## Third-party models
 
-## Other providers on the same gateway
+Cloudflare's REST API serves other providers' models with your Cloudflare token. Use the direct route, and name the model in `author/model` form:
 
-The gateway also fronts OpenAI, Anthropic and the rest. Store those keys in the dashboard with [BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/). Point that provider's own Laravel driver at the gateway. Do not build the URL by hand:
+```php
+use function Laravel\Ai\agent;
+
+agent()->prompt('Hello', provider: 'workers-ai', model: 'openai/gpt-5.5');
+```
+
+- Cloudflare bills the call from AI Gateway credits, or uses a key stored under the `default` alias. See [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/) and [BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/).
+- The call goes through your account's default gateway. To pick another, add the `cf-aig-gateway-id` header as in the previous section.
+- The token needs Account, Workers AI, Read, the same as other calls. Tested on 2026-11-05 with `openai/gpt-4.1-mini`.
+
+<Aside type="caution" title="Do not use the gateway key for third-party models">
+  With `gateway` set, the call goes to `/compat` and the package sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid provider key, so the call returns HTTP 401. Tested on 2026-11-05.
+</Aside>
+
+## Use another provider's driver through a gateway
+
+You can point another Laravel AI driver at a gateway to get logs and caching. Use your own provider key, because Laravel AI's drivers always send `key` as `Authorization`. Add the key to your application's `.env` file as `OPENAI_API_KEY`. `BaseUrl::providerUrl()` builds the URL in `config/ai.php`:
 
 ```php
 use Meirdick\WorkersAi\Cloudflare\BaseUrl;
 
 'openai' => [
-    'driver' => 'openai',
-    'key'    => env('CLOUDFLARE_AI_API_TOKEN'),
-    'url'    => BaseUrl::providerUrl(env('CLOUDFLARE_ACCOUNT_ID'), env('CLOUDFLARE_AI_GATEWAY'), 'openai'),
+    'driver'  => 'openai',
+    'key'     => env('OPENAI_API_KEY'),
+    'url'     => BaseUrl::providerUrl(env('CLOUDFLARE_ACCOUNT_ID'), env('CLOUDFLARE_AI_GATEWAY'), 'openai'),
+    // Remove this line unless the gateway is authenticated.
+    'headers' => ['cf-aig-authorization' => 'Bearer '.env('CLOUDFLARE_AI_GATEWAY_TOKEN')],
 ],
 ```
 
-`providerUrl()` takes the account and gateway from `.env` and returns `…/<account>/<gateway>/openai`. Swap `'openai'` for `'anthropic'` or another provider slug. Do not call `config()` here. `config/ai.php` is still loading.
-
-A Workers AI model on this package is still `@cf/...`. The package adds `workers-ai/` on the gateway path. A third-party model keeps the name Cloudflare documents, so this also works:
-
-```php
-agent()->prompt('Hello', provider: 'workers-ai', model: 'openai/gpt-6-luna');
-```
-
-The direct route rejects that model. Third-party names only route through the gateway. The provider's own driver is the better call when you want that provider's tools and options. The `model:` form is the one-provider shortcut.
-
-## Authenticated Gateway
-
-A gateway with Authenticated Gateway turned on needs a second token. Cloudflare reads it from the `cf-aig-authorization` header. Your Workers AI token still goes in `Authorization`.
-
-Set `gateway_token`. It is optional. Omit it unless this gateway has Authenticated Gateway on:
-
-```php
-'workers-ai' => [
-    // ...
-    'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'), // optional; authenticated gateway.ai.cloudflare.com only
-],
-```
-
-The package sends `cf-aig-authorization: Bearer <gateway_token>` on chat, streaming and embeddings. Those go to `gateway.ai.cloudflare.com`. If you leave `gateway_token` empty, the package sends no header.
-
-Clef and Clairic do not use that host. They call `api.cloudflare.com` and name the gateway with `cf-aig-gateway-id`. For those calls, `key` is the only token. `gateway_token` is not sent as their credential.
-
-Without the header, an authenticated gateway returns HTTP 401 with `{"code":10000,"message":"Authentication error"}`. Laravel throws `Illuminate\Http\Client\RequestException`. This message does not name the gateway or the header.
+Replace `'openai'` with `'anthropic'` or another provider slug. Do not call `config()` here, because `config/ai.php` is still loading. To use a stored key instead, use [third-party models](#third-party-models).
 
 ## Use the provider path
 
@@ -81,11 +132,11 @@ To use `<gateway>/workers-ai/v1` instead of `/compat`, set `gateway_path`:
 'gateway_path' => 'workers-ai/v1',
 ```
 
-On some gateways this path returns 401 for embeddings. See [How it works](/concepts/how-it-works/).
+On some gateways this path returns 401 for embeddings. See [The gateway provider path](/concepts/routes/#the-gateway-provider-path).
 
 ## Use a custom URL
 
-Set `url` for a full URL, such as a `/compat` URL or a self-hosted gateway. Do not set `account_id` with it. The package throws if both are set.
+Set `url` for a full URL, such as a proxy. Add it to your application's `.env` file as `CLOUDFLARE_AI_URL`, and read it in `config/ai.php`. Do not set `account_id` with it, because the package throws if both are set.
 
 ```php
 'workers-ai' => [
@@ -95,7 +146,7 @@ Set `url` for a full URL, such as a `/compat` URL or a self-hosted gateway. Do n
 ],
 ```
 
-If the URL ends in `/compat`, the package adds the `workers-ai/` model prefix. For any other URL, it sends the bare model name.
+If the URL ends in `/compat`, the package adds the `workers-ai/` model prefix, and Clef and Clairic throw. For any other URL, it sends the bare model name. See [Where each call goes](/concepts/routes/#where-each-call-goes).
 
 ## Session affinity
 
@@ -108,11 +159,11 @@ Set `session_affinity` to send the `x-session-affinity` header on every request:
 ],
 ```
 
-Related requests then reach the same cache shard. This helps the model prefix cache. See the next section.
+Related requests then reach the same cache shard, which helps the model prefix cache. See the next section.
 
 ## Cached tokens
 
-Some models cache the start of a prompt. Cloudflare reports the cached count in `usage.prompt_tokens_details.cached_tokens`.
+Some models cache the start of a prompt, and a cache hit costs fewer neurons. Cloudflare reports the cached count in `usage.prompt_tokens_details.cached_tokens`.
 
 The two `laravel/ai` lines count differently:
 
@@ -132,14 +183,14 @@ $cached   = $response->usage->cacheReadInputTokens ?? 0;
 $uncached = $total - $cached;
 ```
 
-The maintainer measured two identical calls on `@cf/zai-org/glm-5.3-flash` under one `x-session-affinity` value on 2026-09-16:
+Two identical calls on `@cf/zai-org/glm-5.3-flash`, under one `x-session-affinity` value, measured on 2026-09-16:
 
 | Call | Wire `prompt_tokens` | Wire `cached_tokens` | 0.x `promptTokens` | 1.x `inputTokens` | `cacheReadInputTokens` | Neurons |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 1221 | 0 | 1221 | 1221 | 0 | 17.8 |
 | 2 | 1221 | 1216 | 5 | 1221 | 1216 | 8.3 |
 
-The cache depends on the model. `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache in tests. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
+The cache depends on the model. In tests, `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
 
 <Aside type="note">
   This model prefix cache is separate from AI Gateway response caching. The package has no setting for gateway response caching. Set that in the dashboard.
@@ -158,7 +209,7 @@ The package sends the `headers` array from the provider config. A configured hea
 ],
 ```
 
-On `laravel/ai` 1.x, `Provider::withHeaders()` writes to the same array, so per-call headers reach Workers AI. Before version 1.0.0, the package dropped the `headers` key and per-call headers.
+On `laravel/ai` 1.x, `Provider::withHeaders()` writes to the same array, so per-call headers reach Workers AI. Before package version 1.0.0, the package dropped the `headers` key and per-call headers.
 
 ## Logging
 
@@ -166,4 +217,4 @@ AI Gateway logs are in the Cloudflare dashboard. The package does not write requ
 
 ## Gateway retries
 
-An AI Gateway with `retry_max_attempts` set retries inside your single HTTP request. A late error can make the request several times longer, and your own timeout can cut it. Use one retry layer. If you use the gateway retry, set `retry` to `false` in the package config. See [Errors and retries](/guides/errors-and-retries/).
+An AI Gateway with `retry_max_attempts` set retries inside your single HTTP request, and the package retries too. A late error can make the request several times longer, and your own timeout can cut it. Use one retry layer. If you use the gateway retry, set `retry` to `false` in the package config. See [Errors and retries](/guides/errors-and-retries/).

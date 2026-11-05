@@ -83,34 +83,28 @@ class WorkersAiClassificationGateway implements ClassificationGateway
             ? $providerOptions
             : [...$providerOptions, 'images' => $this->runImages($attachments, 'Clef')];
 
-        [$client, $url] = $this->runRequest($provider, $model, $timeout);
+        [$data] = $this->postRun($provider, $model, $timeout, array_merge($options, [
+            'model' => ClefModel::selector($model),
+            'state' => $state,
+            'questions' => array_map($this->mapQuestion(...), $questions),
+        ]));
 
-        $response = $this->mapFailoverErrors(
-            $provider->name(),
-            fn () => $client->post($url, array_merge($options, [
-                'model' => ClefModel::selector($model),
-                'state' => $state,
-                'questions' => array_map($this->mapQuestion(...), $questions),
-            ])),
-        );
-
-        return $this->classificationResponse($provider, $model, $questions, $response);
+        return $this->classificationResponse($provider, $model, $questions, $data);
     }
 
     /**
      * @param  array<string, Question>  $questions
+     * @param  array<string, mixed>  $data
      */
     protected function classificationResponse(
         ClassificationProvider $provider,
         string $model,
         array $questions,
-        \Illuminate\Http\Client\Response $response,
+        array $data,
     ): ClassificationResponse {
-        $data = $response->json();
-
         $answers = [];
 
-        foreach ($data['answers'] ?? [] as $key => $answer) {
+        foreach ($data['answers'] as $key => $answer) {
             if ($mapped = $this->mapAnswer($answer, $questions[$key] ?? null)) {
                 $answers[$key] = $mapped;
             }

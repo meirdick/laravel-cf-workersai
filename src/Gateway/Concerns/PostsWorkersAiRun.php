@@ -6,14 +6,19 @@ namespace Meirdick\WorkersAi\Gateway\Concerns;
 
 use finfo;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
 use Laravel\Ai\Contracts\Files\StorableFile;
+use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Files\File;
 use Laravel\Ai\Files\Image;
 use Laravel\Ai\Providers\Provider;
+use Meirdick\WorkersAi\Cloudflare\ErrorEnvelope;
 use Meirdick\WorkersAi\Cloudflare\RunEndpoint;
+use Meirdick\WorkersAi\Exceptions\GatewayTimeoutException;
 
 /**
  * Posts a Clef or Clairic request to Workers AI `/ai/run/{model}`.
@@ -31,6 +36,64 @@ trait PostsWorkersAiRun
         'image/png' => 'PNG',
         'image/webp' => 'WebP',
     ];
+
+    /**
+     * Post to the run endpoint and return the model's own reply.
+     *
+     * @param  array<string, mixed>  $body
+     * @return array{0: array<string, mixed>, 1: Response}
+     */
+    protected function postRun(Provider $provider, string $model, int $timeout, array $body): array
+    {
+        [$client, $url] = $this->runRequest($provider, $model, $timeout);
+
+        try {
+            $response = $this->mapFailoverErrors(
+                $provider->name(),
+                fn () => $client->post($url, $body),
+            );
+        } catch (RequestException $exception) {
+            if ($exception->response?->status() === 408) {
+                throw GatewayTimeoutException::forProvider($provider->name(), $exception->getCode(), $exception);
+            }
+
+            throw $exception;
+        }
+
+        return [$this->runPayload($response), $response];
+    }
+
+    /**
+     * Read the model's reply from a run response.
+     *
+     * The REST API wraps a reply in `{result, success, errors: []}`, measured
+     * 2026-11-05 on Clef and Clairic, direct and with a gateway header.
+     * Cloudflare's model pages show it without the wrapper, which is what a
+     * Workers binding returns, so both are read. A reply with no `answers`
+     * throws. An empty response would look like a model with nothing to say.
+     *
+     * @return array<string, mixed>
+     */
+    protected function runPayload(Response $response): array
+    {
+        $data = $response->json();
+
+        if (! is_array($data) || ($data['success'] ?? null) === false || ErrorEnvelope::isErrorPayload($data)) {
+            throw new AiException(sprintf(
+                'Workers AI Error: [%s] %s',
+                ErrorEnvelope::extractType(is_array($data) ? $data : null),
+                ErrorEnvelope::extract(is_array($data) ? $data : null),
+            ));
+        }
+
+        $payload = is_array($data['result'] ?? null) ? $data['result'] : $data;
+
+        if (! is_array($payload['answers'] ?? null)) {
+            throw new AiException('Workers AI Error: Response contained no answers.');
+        }
+
+        return $payload;
+    }
 
     /**
      * The resolved run URL for the model, with gateway routing as a header.

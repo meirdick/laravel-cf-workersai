@@ -1,11 +1,11 @@
 ---
 title: Image input
-description: Send images to Workers AI vision models, and learn which attachment types work.
+description: Send images to Workers AI vision models. Lists the attachment types that work.
 sidebar:
   order: 6
 ---
 
-You can attach images to a prompt. The package sends each image as an `image_url` content part. Use a Workers AI model that accepts images.
+Attach images to a prompt. The package sends each image as an `image_url` content part. Choose a Workers AI model that accepts images.
 
 ```php
 use Laravel\Ai\Files\Image;
@@ -29,16 +29,20 @@ $response = agent('Describe images.')->prompt(
 | Raw `UploadedFile` | Passed as is | Base64 data URL, MIME checked |
 | Uploaded file | `Image::fromUpload()` | Base64 data URL (it becomes a `Base64Image`) |
 
-The MIME allowlist (`image/jpeg`, `image/png`, `image/gif`, `image/webp`) applies only when you pass a raw `Illuminate\Http\UploadedFile`, such as `$request->file('photo')`. For other MIME types (SVG, AVIF, HEIC), the package throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
+The package checks the MIME type only when you pass a raw `Illuminate\Http\UploadedFile`, such as `$request->file('photo')`. It allows `image/jpeg`, `image/png`, `image/gif` and `image/webp`. For other types (SVG, AVIF, HEIC), it throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
 
-`Image::fromUpload()` returns a `Base64Image`. The package does not check the MIME type of a `Base64Image`, `LocalImage`, `StoredImage` or `RemoteImage`. Cloudflare then accepts or rejects the file. Send only the four types above.
+`Image::fromUpload()` returns a `Base64Image`, and the package does not check a `Base64Image`, `LocalImage`, `StoredImage` or `RemoteImage`. Cloudflare accepts or rejects those files. Send only the four types above.
 
 ## Not supported
 
-- Documents. The package throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
+- Documents. The package throws `InvalidArgumentException` with the same message. To use a document, extract its text and put the text in the prompt.
 - Audio and video.
 - Image generation.
 
 <Aside type="note">
-  The package does not check that the model accepts images. The package author's notes name no vision model. To find one, open the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/) and filter for models that take image input. Copy its `@cf/...` name.
+  The package does not check that the model accepts images. Pick a vision model from the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/) and copy its `@cf/...` name into `model:`.
 </Aside>
+
+## Images for Clef and Clairic
+
+Clef and Clairic take images in a different request format. They accept up to 4 inline images, in JPEG, PNG or WebP. They reject remote URLs. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).

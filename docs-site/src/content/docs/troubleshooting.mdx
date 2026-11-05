@@ -10,7 +10,7 @@ sidebar:
 ### Workers AI requires an API token
 
 **Cause.** `key` is empty or not a string.
-**Fix.** Set `key` in your provider config, for example `env('CLOUDFLARE_AI_API_TOKEN')`. Use a token with the `Workers AI: Read` permission.
+**Fix.** Set `key` in your provider config, for example `env('CLOUDFLARE_AI_API_TOKEN')`. Create the token with the permission named Account > Workers AI > Read in the Cloudflare dashboard.
 
 ### Workers AI requires an `account_id` or explicit `url`
 
@@ -38,17 +38,17 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 
 **Cause.** One of these:
 
-- The API token is wrong or lacks `Workers AI: Read`.
-- Your AI Gateway has Authenticated Gateway on, and you did not set `gateway_token`.
+- The API token is wrong or lacks the Account > Workers AI > Read permission.
+- Your AI Gateway has Authenticated Gateway on, and you did not set `gateway_token`. This affects chat and embeddings. Clef and Clairic do not need it.
 - You use the gateway provider path `workers-ai/v1` for embeddings on a gateway with Authenticated Gateway on.
 
-**Fix.** Check the token. Set `gateway_token`. Remove `gateway_path` to use `/compat`.
+**Fix.** Check the token. Set `gateway_token` to an AI Gateway token with Run permission. For embeddings, remove `gateway_path` to use `/compat`.
 
 ## Model errors
 
 ### The model has the workers-ai/ prefix, but the endpoint expects bare model IDs
 
-**Cause.** You wrote `workers-ai/@cf/...` and the endpoint is the direct API or the provider path.
+**Cause.** You wrote `workers-ai/@cf/...` and the endpoint is the direct API or the provider path. The package throws `InvalidArgumentException`. A third-party name such as `openai/gpt-5.5` does not cause this error.
 **Fix.** Drop the prefix. Write `@cf/...`.
 
 ### 410 Model has been deprecated (RequestException)
@@ -125,6 +125,23 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 **Cause.** Your AI Gateway retries inside the request, and the package retries too.
 **Fix.** Use one retry layer. See [Errors and retries](/guides/errors-and-retries/).
 
+## Clef and Clairic errors
+
+### Workers AI Error: Response contained no answers.
+
+**Cause.** Cloudflare returned HTTP 200 with no `answers`.
+**Fix.** Check the model ID and your questions or fields. If they are correct, try again, and report the issue if it continues.
+
+### Workers AI Error: [type] message, from Clef or Clairic
+
+**Cause.** Cloudflare returned HTTP 200 with a non-empty `errors`, or `success: false`.
+**Fix.** Read the message. It holds the Cloudflare reason.
+
+### Clef and Clairic use the Workers AI `/ai/run` API, not `/compat`
+
+**Cause.** Your `url` ends in `/compat`.
+**Fix.** Set `account_id`, and `gateway` if you use one. Remove `url`.
+
 ## Attachment errors
 
 ### Workers AI does not support document attachments
@@ -139,8 +156,12 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 
 ## Cost shows as zero
 
-**Cause.** You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, or on a streamed call. On 1.x, the token counts differ from 0.x. See [Cost tracking](/guides/cost-tracking/).
-**Fix.** Listen for `WorkersAiUsageReported`. It covers non-streamed calls.
+**Cause.** One of these:
+
+- You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, and on streamed calls.
+- The call was Clef or Clairic. They report no neurons, and Cloudflare bills them per input token.
+
+**Fix.** For chat and embeddings, listen for `WorkersAiUsageReported`. It fires for streamed calls too. For Clef and Clairic, read `$response->usage->inputTokens`. See [Cost tracking](/guides/cost-tracking/).
 
 ## Upgrade errors
 

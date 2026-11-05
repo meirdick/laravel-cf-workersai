@@ -1,0 +1,45 @@
+---
+title: Overview
+description: What the package does, what it adds to Laravel AI, and where to start.
+---
+
+`meirdick/laravel-cf-workersai` is a [Laravel AI](https://laravel.com/docs/ai-sdk) provider for [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/). Install it, add a `workers-ai` entry to `config/ai.php`, and Laravel AI calls run on the models Cloudflare hosts.
+
+## What you can do
+
+| Task | API | Default model |
+| --- | --- | --- |
+| Generate text, call tools, stream | `agent()` | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` |
+| Create embeddings | `Embeddings::for()` | `@cf/baai/bge-large-en-v1.5` |
+| Answer typed questions about an input | `Classification::of()`, `Str::decide()` | `@cf/cloudflare/clef` |
+| Read or predict typed values from an input | `Extraction::of()` | `@cf/cloudflare/clairic` |
+
+Clef uses the Laravel AI classification API. Clairic has no Laravel AI API, so the package adds `Extraction`. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).
+
+## What the package adds
+
+Laravel AI's `openai-compatible` driver can call a Cloudflare URL. It is enough if you generate text with one model and every agent has `#[MaxTokens]`. This package also does these things:
+
+- Sends a 4096 token cap by default. With no cap, Cloudflare stops most models at 256 tokens.
+- Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text.
+- Sends `reasoning_effort`, which Laravel AI does not have.
+- Reports the neurons Cloudflare bills, with the `WorkersAiUsageReported` event.
+- Retries HTTP 429 and Cloudflare edge errors, and maps them for Laravel AI failover.
+- Sends the second token that an authenticated AI Gateway needs.
+- Calls Clef and Clairic, which the `openai-compatible` driver cannot reach.
+
+## How it reaches Cloudflare
+
+Calls go directly to Workers AI, or through [AI Gateway](https://developers.cloudflare.com/ai-gateway/) for logs, caching and rate limits. Both use the same calling code, and only the config differs. See [Direct and gateway routes](/concepts/routes/).
+
+## Requirements
+
+- PHP 8.3 or later.
+- `laravel/ai` 0.9 to 1.3. Clef needs 1.0 or later.
+- A Cloudflare account and an API token.
+
+## Next steps
+
+- Install the package with the [Quickstart](/quickstart/).
+- Choose a connection with [Direct and gateway routes](/concepts/routes/).
+- See every config key in [Configuration](/reference/configuration/).

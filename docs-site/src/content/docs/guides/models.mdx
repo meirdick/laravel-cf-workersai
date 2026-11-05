@@ -1,11 +1,11 @@
 ---
 title: Models
-description: Choose a Workers AI model, and learn what the maintainer measured for each model.
+description: Choose a Workers AI model, and read notes from tests on one account.
 sidebar:
   order: 9
 ---
 
-Workers AI hosts many open-weight models. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/). Model names are strings that you supply. The package does not check that a model exists.
+Workers AI hosts many open-weight models. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/). You give the model name as a string. The package does not check that the model exists.
 
 ## Name prefixes
 
@@ -16,14 +16,18 @@ Workers AI hosts many open-weight models. See the [Cloudflare model catalog](htt
 | `@cf/google/...` | Gemma |
 | `@cf/qwen/...`, `@cf/mistralai/...`, `@cf/microsoft/...` | Other vendors |
 | `@cf/baai/...` | Embedding models |
-| `@cf/cloudflare/clef`, `clef-flash`, `clef-omni` | Decision models. See [Decisions](/guides/decisions/). |
-| `@cf/cloudflare/clairic` | Extraction model. See [Decisions](/guides/decisions/). |
+| `@cf/cloudflare/clef`, `clef-flash`, `clef-omni` | Decision models. See [Clef](/system-one/clef/). |
+| `@cf/cloudflare/clairic` | Extraction model. See [Clairic](/system-one/clairic/). |
 
-Always write the bare name, such as `@cf/openai/gpt-oss-120b`. Do not write `workers-ai/` before it. The package adds it where needed.
+Write the bare name, such as `@cf/openai/gpt-oss-120b`. Do not write `workers-ai/` before it. The package adds the prefix where the route needs it. See [Routes](/concepts/routes/).
+
+## Third-party models
+
+The package treats a model ID as a Workers AI model when it starts with `@cf/` or `@hf/`. It sends any other name, such as `openai/gpt-5.5`, unchanged. On `/ai/v1`, a third-party model uses Cloudflare billing: AI Gateway credits (Unified Billing) or a stored provider key. See [AI Gateway](/guides/ai-gateway/).
 
 ## Set the model
 
-There are four ways. Each later item beats the ones before it for that call:
+There are four ways. Each later item beats the earlier ones for that call:
 
 1. The package default or a `models.*` config key.
 2. `#[UseCheapestModel]` or `#[UseSmartestModel]` on the agent.
@@ -49,9 +53,9 @@ Set defaults in config:
 ],
 ```
 
-## What the maintainer measured
+## Test notes
 
-These notes come from the package author's tests on one Workers AI account. They are not a promise. Model behavior changes. Test your own model.
+These notes come from tests on one Workers AI account. They are not a guarantee, because model behavior changes. Test the model you plan to use.
 
 | Model | Notes |
 | --- | --- |
@@ -70,6 +74,6 @@ These notes come from the package author's tests on one Workers AI account. They
 | --- | --- |
 | `410 Model has been deprecated` | Cloudflare retired the model. Pick another. |
 | `403 This account is not allowed to access` | Your plan does not include the model. `@cf/zai-org/glm-5.3` is not enabled on every account. |
-| `400 No such model` | You sent a `workers-ai/` prefixed name to the direct API. The package blocks this before the request. |
+| `400 No such model` | You sent a `workers-ai/`-prefixed name to the direct API. The package throws `InvalidArgumentException` before the request. |
 
 `@cf/meta/llama-3.1-8b-instruct` is retired. It was the `#[UseCheapestModel]` default through version 0.6.1.

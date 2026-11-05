@@ -1,67 +1,57 @@
 ---
 title: How it works
-description: How Workers AI, AI Gateway and Laravel AI fit together, and how the package chooses an endpoint.
+description: How Workers AI, AI Gateway and Laravel AI fit together, and what the package does on each call.
+sidebar:
+  order: 2
 ---
 
 ## The three parts
 
-**Workers AI** is the Cloudflare service that runs open-weight models. You call it over HTTP. Cloudflare bills it in neurons.
+**Workers AI** is the Cloudflare service that hosts models. You call it over HTTP. Cloudflare bills generative models in neurons. It bills Clef and Clairic per input token.
 
-**AI Gateway** is an optional Cloudflare proxy. It sits between your app and Workers AI. It gives you request logs, cost analytics, caching and retries. You set it up in the Cloudflare dashboard. This package does not configure it.
+**AI Gateway** is an optional Cloudflare proxy between your app and the model. It adds request logs, cost analytics, caching and rate limits. You set it up in the Cloudflare dashboard. The package only sends requests to it.
 
-**Laravel AI** (`laravel/ai`) is the Laravel package that gives you `agent()`, `Embeddings`, tools and streaming. It sends each request through a provider.
+**Laravel AI** (`laravel/ai`) is the Laravel package that gives you `agent()`, `Embeddings`, `Classification`, tools and streaming. It sends each request through a provider.
 
 This package is a Laravel AI provider. It turns Laravel AI calls into Workers AI requests.
 
 ## How it plugs into Laravel AI
 
-The package registers one driver in the Laravel AI manager. The name is `workers-ai`.
+The package registers one driver in the Laravel AI manager. The driver name is `workers-ai`, and `workersai` is an alias.
 
-The provider has a text gateway and an embedding gateway, both backed by one class. The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as in any other provider.
+| Call | Handled by | Cloudflare API |
+| --- | --- | --- |
+| `agent()`, `Embeddings::for()` | One gateway class, `WorkersAiGateway` | OpenAI-compatible, `/ai/v1` or `/compat` |
+| `Classification::of()`, `Str::decide()` | `WorkersAiClassificationGateway`, on `laravel/ai` 1.0 and later | `/ai/run/{model}` |
+| `Extraction::of()` | `WorkersAiExtractionGateway`, on all versions | `/ai/run/{model}` |
 
-On `laravel/ai` 1.0 and later the same provider also answers classification calls. Those go to Clef, not to the chat endpoint. Clairic extraction is a separate call. See [Decisions and extraction](/guides/decisions/).
+The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as on any other provider.
 
-Anything you do with Laravel AI works on this provider. This includes `#[MaxTokens]`, `#[Timeout]`, `#[Provider]` and `Ai::fakeAgent()`.
+Laravel AI features work on this provider, including `#[MaxTokens]`, `#[Timeout]`, `#[Provider]`, `Ai::fakeAgent()`, `Classification::fake()` and failover. Clairic is not part of Laravel AI, so `Extraction` has its own `fake()`, events and failover with the same shape.
 
-## Endpoint shapes
+## How the package picks a URL
 
-The package picks an endpoint from your config. It checks the keys in this order:
+It reads your config in this order:
 
-1. `url` is set. All requests go to that URL.
-2. `account_id` and `gateway` are set. Requests go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`.
-3. `account_id` is set. Requests go to `https://api.cloudflare.com/client/v4/accounts/<account_id>/ai/v1`.
+1. `url` is set. Text and embeddings go to that URL.
+2. `account_id` and `gateway` are set. Text and embeddings go to the gateway's `/compat` path.
+3. `account_id` is set. Text and embeddings go to the direct API.
 
-Chat and embeddings use those URLs. Clef and Clairic do not. They post to `/ai/run/{model}` on the same account. A configured `gateway` is sent as the `cf-aig-gateway-id` header, not as a `/compat` path. See [Decisions and extraction](/guides/decisions/).
+[Direct and gateway routes](/concepts/routes/) has the full table, with the URLs for Clef and Clairic.
 
-If you set both `url` and `account_id`, the package throws. Pick one.
+## What the package does for text calls
 
-### Why the gateway uses `/compat`
+- Sends a 4096 token cap when the call sets none. With no cap, Cloudflare stops most models at 256 tokens.
+- Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text.
+- Sends `reasoning_effort`, which Laravel AI does not have.
+- Dispatches `WorkersAiUsageReported` with the neuron figure.
+- Retries HTTP 429, 502, 503, 504, 520, 522 and 524.
+- Reads reasoning text from each key that models use.
 
-AI Gateway exposes Workers AI on two paths:
+## What the package does for Clef and Clairic calls
 
-| Path | Chat | Embeddings | Model name |
-| --- | --- | --- | --- |
-| `<gateway>/compat` | works | works | `workers-ai/@cf/...` or bare `@cf/...` |
-| `<gateway>/workers-ai/v1` | works | works, or returns 401 | bare `@cf/...` |
-| Direct API | works | works | bare `@cf/...` |
-
-The maintainer measured this on 2026-09-09. On a gateway with Authenticated Gateway turned on, the provider path `workers-ai/v1` returned 401 for embeddings. Chat on the same gateway worked. The `/compat` path worked on every gateway tested. So the package uses `/compat` by default.
-
-To use the provider path, set `gateway_path` to `workers-ai/v1`.
-
-### Model name prefix
-
-The `/compat` path routes on a `workers-ai/` prefix. You do not write it. Write bare names such as `@cf/meta/llama-3.3-70b-instruct-fp8-fast`. The package adds the prefix on `/compat` and sends the bare name on other endpoints.
-
-If you give a prefixed name to the direct API, the package throws. The direct API returns `400 No such model` for it.
-
-## What the package adds
-
-The package handles several Workers AI behaviors that Laravel AI does not:
-
-- Cloudflare stops most models at 256 tokens if the request has no cap. The package sends 4096 by default.
-- A reasoning model can return HTTP 200 with no text. The package throws `EmptyResponseException`.
-- Laravel AI does not send `reasoning_effort`. The package does.
-- Cloudflare bills in neurons. The package dispatches an event with the figure.
-- The package retries HTTP 429, 502, 503, 504, 520, 522 and 524.
-- Workers AI returns reasoning text under different keys by model. The package reads all of them.
+- Sends the model ID in the URL and the short selector, such as `clef`, in the body.
+- Sends images in the `images` field, up to 4, as base64.
+- Reads a reply with or without Cloudflare's `result` envelope.
+- Throws `AiException` when a 200 reply has an error or no answers.
+- Applies the same retries, `headers` and failover rules as text calls.

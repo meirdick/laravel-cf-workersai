@@ -6,6 +6,7 @@ namespace Meirdick\WorkersAi\Providers;
 
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Str;
 use Laravel\Ai\Contracts\Gateway\EmbeddingGateway;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
 use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
@@ -16,10 +17,16 @@ use Laravel\Ai\Providers\Provider;
 use Meirdick\WorkersAi\Attributes\ReasoningEffort;
 use Meirdick\WorkersAi\Cloudflare\ClairicModel;
 use Meirdick\WorkersAi\Cloudflare\ClefModel;
+use Meirdick\WorkersAi\Events\Extracted;
+use Meirdick\WorkersAi\Events\Extracting;
+use Meirdick\WorkersAi\Events\ExtractionFailed;
 use Meirdick\WorkersAi\Extraction\Field;
+use Meirdick\WorkersAi\Gateway\FakeExtractionGateway;
 use Meirdick\WorkersAi\Gateway\WorkersAiExtractionGateway;
 use Meirdick\WorkersAi\Gateway\WorkersAiGateway;
+use Meirdick\WorkersAi\Prompts\ExtractionPrompt;
 use Meirdick\WorkersAi\Responses\ExtractionResponse;
+use Throwable;
 
 /**
  * Laravel AI provider for Cloudflare Workers AI.
@@ -65,7 +72,7 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
             throw new AiException(
                 'Workers AI requires an API token. Set `key` in your workers-ai provider '
                 ."config — e.g. `'key' => env('CLOUDFLARE_AI_API_TOKEN')` — using a Cloudflare "
-                .'API token with the `Workers AI: Read` permission.'
+                .'API token with the Account > Workers AI > Read permission.'
             );
         }
 
@@ -105,6 +112,10 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
 
     public function extractionGateway(): WorkersAiExtractionGateway
     {
+        if (app()->bound(FakeExtractionGateway::class)) {
+            return app(FakeExtractionGateway::class);
+        }
+
         return $this->extractionGateway ??= new WorkersAiExtractionGateway($this->events);
     }
 
@@ -129,16 +140,34 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
         array $attachments = [],
         ?string $referenceDate = null,
     ): ExtractionResponse {
-        return $this->extractionGateway()->extract(
-            $this,
-            $model ?? $this->defaultExtractionModel(),
-            $state,
-            $fields,
-            $timeout,
-            $providerOptions,
-            $attachments,
-            $referenceDate,
-        );
+        $model ??= $this->defaultExtractionModel();
+
+        $invocationId = (string) Str::uuid7();
+
+        $prompt = new ExtractionPrompt($state, $fields, $this, $model, $timeout, $providerOptions, $attachments, $referenceDate);
+
+        $this->events->dispatch(new Extracting($invocationId, $this, $model, $prompt));
+
+        try {
+            $response = $this->extractionGateway()->extract(
+                $this,
+                $model,
+                $state,
+                $fields,
+                $timeout,
+                $providerOptions,
+                $attachments,
+                $referenceDate,
+            );
+        } catch (Throwable $exception) {
+            $this->events->dispatch(new ExtractionFailed($invocationId, $this, $model, $prompt, $exception));
+
+            throw $exception;
+        }
+
+        $this->events->dispatch(new Extracted($invocationId, $this, $model, $prompt, $response));
+
+        return $response;
     }
 
     public function defaultTextModel(): string

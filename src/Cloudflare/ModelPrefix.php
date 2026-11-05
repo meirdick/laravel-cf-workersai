@@ -31,7 +31,9 @@ final class ModelPrefix
      * Throws if `$model` cannot work against the endpoint at `$url`.
      *
      * Only the prefixed-model-on-a-bare-path direction is fatal; a bare model
-     * on `/compat` is resolved by `normalize()` instead.
+     * on `/compat` is resolved by `normalize()` instead. A third-party name
+     * such as `openai/gpt-5.5` is valid on both paths. Cloudflare's REST API
+     * serves it on `/ai/v1`, and `/compat` routes on it.
      *
      * @throws InvalidArgumentException
      */
@@ -39,14 +41,6 @@ final class ModelPrefix
     {
         $isCompat = BaseUrl::isCompatEndpoint($url);
         $hasPrefix = str_starts_with($model, self::PREFIX);
-
-        if (! $isCompat && ! self::isWorkersAiModel($model)) {
-            throw new InvalidArgumentException(
-                "Model '{$model}' is not a Workers AI model, and the configured endpoint is the direct Workers AI API. "
-                .'Third-party models such as `openai/gpt-6-luna` route through AI Gateway. Set `gateway` '
-                .'(or a `/compat` `url`) so the request goes to the multi-provider endpoint.'
-            );
-        }
 
         if (! $isCompat && $hasPrefix) {
             $bare = substr($model, strlen(self::PREFIX));
@@ -79,7 +73,7 @@ final class ModelPrefix
     }
 
     /**
-     * A Workers AI model ID is `@cf/...`, or that ID already prefixed.
+     * A Workers AI model ID is `@cf/...` or `@hf/...`, or that ID already prefixed.
      *
      * Anything else on `/compat` is another provider's model, such as
      * `openai/gpt-6-luna`, and must not gain the prefix.
@@ -90,6 +84,6 @@ final class ModelPrefix
             ? substr($model, strlen(self::PREFIX))
             : $model;
 
-        return str_starts_with($bare, '@cf/');
+        return str_starts_with($bare, '@cf/') || str_starts_with($bare, '@hf/');
     }
 }

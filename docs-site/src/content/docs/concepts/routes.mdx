@@ -1,0 +1,166 @@
+---
+title: Direct and gateway routes
+description: The ways the package reaches Cloudflare, what each setup needs, and which features work on each.
+sidebar:
+  order: 1
+---
+
+The package reaches Cloudflare in one of four ways. Your config selects the route. Your calling code is the same on all of them. You can change route at any time by changing config.
+
+## Choose a route
+
+| You want | Use |
+| --- | --- |
+| The shortest setup, and no gateway features | Direct route |
+| AI Gateway logs, caching and rate limits | Gateway route |
+| Gateway features with one token, on `api.cloudflare.com` | Direct route with a gateway header |
+| OpenAI, Anthropic or another provider's models, billed by Cloudflare | Direct route. See [third-party models](/guides/ai-gateway/#third-party-models). |
+| A proxy, or a URL that the package does not build | Custom `url` |
+
+## What each route needs
+
+All routes need a Cloudflare API token with the Account, Workers AI, Read permission.
+
+| Route | Provider config | Second token |
+| --- | --- | --- |
+| Direct | `key`, `account_id` | No |
+| Gateway | `key`, `account_id`, `gateway` | `gateway_token`, only if Authenticated Gateway is on |
+| Direct with a gateway header | `key`, `account_id`, `headers` | No |
+| Custom | `key`, `url` | Depends on the URL |
+
+Values go in your application's `.env` file. `config/ai.php` reads them with `env()`.
+
+<Tabs syncKey="route">
+  <TabItem label="Direct">
+    Add to `.env`:
+
+    ```ini
+    CLOUDFLARE_ACCOUNT_ID=your-account-id
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    ```
+
+    Add to the `providers` array in `config/ai.php`:
+
+    ```php
+    'workers-ai' => [
+        'driver'     => 'workers-ai',
+        'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+    ],
+    ```
+  </TabItem>
+  <TabItem label="Gateway">
+    Add to `.env`. Leave the gateway token empty unless Authenticated Gateway is on:
+
+    ```ini
+    CLOUDFLARE_ACCOUNT_ID=your-account-id
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    CLOUDFLARE_AI_GATEWAY=your-gateway-slug
+    CLOUDFLARE_AI_GATEWAY_TOKEN=
+    ```
+
+    Add to the `providers` array in `config/ai.php`:
+
+    ```php
+    'workers-ai' => [
+        'driver'        => 'workers-ai',
+        'key'           => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id'    => env('CLOUDFLARE_ACCOUNT_ID'),
+        'gateway'       => env('CLOUDFLARE_AI_GATEWAY'),
+        'gateway_token' => env('CLOUDFLARE_AI_GATEWAY_TOKEN'),
+    ],
+    ```
+  </TabItem>
+  <TabItem label="Direct with a gateway header">
+    Add to `.env`:
+
+    ```ini
+    CLOUDFLARE_ACCOUNT_ID=your-account-id
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    CLOUDFLARE_AI_GATEWAY=your-gateway-slug
+    ```
+
+    Add to the `providers` array in `config/ai.php`:
+
+    ```php
+    'workers-ai' => [
+        'driver'     => 'workers-ai',
+        'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+        'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+        'headers'    => ['cf-aig-gateway-id' => env('CLOUDFLARE_AI_GATEWAY')],
+    ],
+    ```
+  </TabItem>
+  <TabItem label="Custom URL">
+    Add to `.env`:
+
+    ```ini
+    CLOUDFLARE_AI_API_TOKEN=your-api-token
+    CLOUDFLARE_AI_URL=https://your-proxy.example.com/ai/v1
+    ```
+
+    Add to the `providers` array in `config/ai.php`:
+
+    ```php
+    'workers-ai' => [
+        'driver' => 'workers-ai',
+        'key'    => env('CLOUDFLARE_AI_API_TOKEN'),
+        'url'    => env('CLOUDFLARE_AI_URL'),
+    ],
+    ```
+  </TabItem>
+</Tabs>
+
+To change route, change `.env` and the provider entry. Your calling code stays the same.
+
+If you set both `url` and `account_id`, the package throws. If you pass a URL as `account_id` or `gateway`, the package also throws, before it sends a request.
+
+An empty `gateway` or `gateway_token` is ignored. So the Gateway entry above also works in an environment with no gateway, such as local development. Leave those two variables out of that environment's `.env`.
+
+## Where each call goes
+
+| Route | Text and embeddings | Clef and Clairic |
+| --- | --- | --- |
+| Direct | `api.cloudflare.com/client/v4/accounts/{account}/ai/v1` | `api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}` |
+| Gateway | `gateway.ai.cloudflare.com/v1/{account}/{gateway}/compat` | The direct run URL, plus the `cf-aig-gateway-id` header |
+| Direct with a gateway header | The direct URL, plus the header | The direct run URL, plus the header |
+| `url` ending in `/ai/v1` | That URL | The `/ai/v1` suffix becomes `/ai/run/{model}` |
+| `url` ending in `/compat` | That URL | Throws. Set `account_id` instead. |
+| Any other `url` | That URL | `{url}/run/{model}` |
+
+Clef and Clairic use a different URL because `/compat` and `/ai/v1` do not serve those models. You do not need a second provider entry. One `workers-ai` entry handles all calls, and Clef and Clairic go through your gateway when you set `gateway`.
+
+## What works on each route
+
+| Feature | Direct | Gateway | Direct with a gateway header |
+| --- | --- | --- | --- |
+| Text, tools, streaming, structured output | Yes | Yes | Yes |
+| Embeddings | Yes | Yes | Yes. Tested on 2026-11-05. Cloudflare's gateway docs do not list this endpoint. |
+| Clef and Clairic | Yes | Yes | Yes |
+| Neuron event for text and embeddings | Yes | Yes | Yes |
+| Gateway logs, analytics, caching, rate limits | No | Yes | Yes |
+| Authenticated Gateway | Not applicable | Needs `gateway_token` | Cloudflare documents `key` as enough |
+| Third-party model with `model:` | Yes | No. See below. | Yes |
+
+Set the features that apply to a gateway, such as caching and rate limits, in the Cloudflare dashboard. The package does not set them.
+
+## Tokens on the gateway route
+
+An authenticated gateway on `gateway.ai.cloudflare.com` needs two credentials on text and embeddings calls:
+
+- `key` goes in `Authorization` and pays for the Workers AI call.
+- `gateway_token` goes in `cf-aig-authorization` and admits the request to the gateway. It is an AI Gateway token with Run permission.
+
+Clef and Clairic call `api.cloudflare.com`. [Cloudflare's docs](https://developers.cloudflare.com/ai-gateway/configuration/authentication/) say this API reads the API token from `Authorization`, so they do not need `gateway_token`. If you set it, the package still sends the header.
+
+## Third-party models and the gateway route
+
+The gateway route sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid OpenAI key, so the call returns HTTP 401. Tested on 2026-11-05. Use the direct route for third-party models. See [third-party models](/guides/ai-gateway/#third-party-models).
+
+## Model names
+
+Write bare Workers AI IDs on every route, such as `@cf/openai/gpt-oss-120b`. The `/compat` path routes on a `workers-ai/` prefix, and the package adds it. On any other URL, a `workers-ai/` prefix throws on text calls. For Clef and Clairic, the package removes the prefix.
+
+## The gateway provider path
+
+AI Gateway also has a `workers-ai/v1` path. Set `gateway_path` to use it. It is not the default. On a gateway with Authenticated Gateway on, tests on 2026-09-09 had `401` on embeddings on this path, while chat on the same gateway worked and `/compat` worked for both.

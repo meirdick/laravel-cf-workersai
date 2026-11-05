@@ -66,6 +66,9 @@ final class ErrorEnvelope
     /**
      * Whether the response body looks like an error payload, regardless of shape.
      *
+     * The Cloudflare API sends `errors: []` on success, so an empty list is
+     * not an error.
+     *
      * @param  array<string, mixed>|null  $data
      */
     public static function isErrorPayload(?array $data): bool
@@ -75,6 +78,6 @@ final class ErrorEnvelope
         }
 
         return data_get($data, 'error') !== null
-            || data_get($data, 'errors') !== null;
+            || ! empty(data_get($data, 'errors'));
     }
 }

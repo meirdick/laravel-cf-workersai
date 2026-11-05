@@ -21,7 +21,8 @@ use Traversable;
  * Clairic's answers, keyed by field name.
  *
  * Read a field with `$response['invoice_number']` or `value()`. `truncated`
- * is true when the state did not fit and Clairic cut it.
+ * is true when the state did not fit and Clairic cut it. `stateText` is the
+ * text Clairic read, when the call sets the `return_state_text` option.
  *
  * @implements ArrayAccess<string, ExtractedValue>
  * @implements IteratorAggregate<string, ExtractedValue>
@@ -42,6 +43,7 @@ class ExtractionResponse implements Arrayable, ArrayAccess, Countable, IteratorA
         public readonly bool $truncated,
         public readonly Usage $usage,
         public readonly Meta $meta,
+        public readonly ?string $stateText = null,
     ) {}
 
     public function withRawResponse(?HttpResponse $response): self
@@ -79,6 +81,7 @@ class ExtractionResponse implements Arrayable, ArrayAccess, Countable, IteratorA
         return [
             'answers' => array_map(fn (ExtractedValue $answer): array => $answer->toArray(), $this->answers),
             'truncated' => $this->truncated,
+            'state_text' => $this->stateText,
             'usage' => $this->usage->toArray(),
             'meta' => $this->meta->toArray(),
         ];

@@ -87,6 +87,27 @@ final readonly class ExtractedValue implements Arrayable, JsonSerializable
         return [(int) $span[0], (int) $span[1]];
     }
 
+    /**
+     * The model's best value, even when `value` is null because `pNull` was
+     * above the threshold.
+     */
+    public function guess(): mixed
+    {
+        return $this->raw['guess'] ?? null;
+    }
+
+    /**
+     * Character offsets of each item in a list answer.
+     *
+     * @return list<array{0: int, 1: int}>|null
+     */
+    public function spans(): ?array
+    {
+        $spans = $this->raw['spans'] ?? null;
+
+        return is_array($spans) ? $spans : null;
+    }
+
     public function median(): mixed
     {
         return $this->raw['median'] ?? null;
@@ -105,6 +126,34 @@ final readonly class ExtractedValue implements Arrayable, JsonSerializable
     public function p90(): mixed
     {
         return $this->raw['p90'] ?? null;
+    }
+
+    /**
+     * The estimate figures of each forecast step.
+     *
+     * @return list<array<string, mixed>>|null
+     */
+    public function steps(): ?array
+    {
+        $steps = $this->raw['steps'] ?? null;
+
+        return is_array($steps) ? $steps : null;
+    }
+
+    /**
+     * Probability that an estimate is below `min`.
+     */
+    public function pBelow(): ?float
+    {
+        return $this->float('p_below');
+    }
+
+    /**
+     * Probability that an estimate is above `max`.
+     */
+    public function pAbove(): ?float
+    {
+        return $this->float('p_above');
     }
 
     /**

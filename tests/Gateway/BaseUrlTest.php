@@ -70,15 +70,46 @@ test('a third-party model on the gateway compat path is not prefixed', function 
     Http::assertSent(fn (Request $r) => json_decode($r->body(), true)['model'] === 'openai/gpt-6-luna');
 });
 
-test('a third-party model on the direct API is rejected before a request', function () {
+test('a third-party model on the direct API is sent unchanged', function () {
     configureWorkersAiProvider(accountId: 'test-account-123');
 
-    Http::fake();
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
 
-    expect(fn () => agent()->prompt('Hello', provider: 'workersai', model: 'openai/gpt-6-luna'))
-        ->toThrow(\Laravel\Ai\Exceptions\AiException::class, 'not a Workers AI model');
+    agent()->prompt('Hello', provider: 'workersai', model: 'openai/gpt-6-luna');
 
-    Http::assertNothingSent();
+    Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/accounts/test-account-123/ai/v1/chat/completions')
+        && json_decode($r->body(), true)['model'] === 'openai/gpt-6-luna');
+});
+
+test('an @hf model is a Workers AI model on both paths', function () {
+    configureWorkersAiProvider(accountId: 'test-account-123');
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai', model: '@hf/google/gemma-7b-it');
+
+    Http::assertSent(fn (Request $r) => json_decode($r->body(), true)['model'] === '@hf/google/gemma-7b-it');
+
+    configureWorkersAiProvider(accountId: 'test-account-123', gateway: 'my-gateway');
+    app(\Laravel\Ai\AiManager::class)->forgetInstance('workersai');
+
+    Http::fake(['gateway.ai.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai', model: '@hf/google/gemma-7b-it');
+
+    Http::assertSent(fn (Request $r) => json_decode($r->body(), true)['model'] === 'workers-ai/@hf/google/gemma-7b-it');
+});
+
+test('a gateway id header routes the direct API through a chosen gateway', function () {
+    configureWorkersAiProvider(accountId: 'test-account-123');
+    config(['ai.providers.workersai.headers' => ['cf-aig-gateway-id' => 'my-gateway']]);
+
+    Http::fake(['api.cloudflare.com/*' => Http::response(workersAiTextResponse())]);
+
+    agent()->prompt('Hello', provider: 'workersai', model: 'openai/gpt-6-luna');
+
+    Http::assertSent(fn (Request $r) => str_contains($r->url(), 'api.cloudflare.com')
+        && $r->hasHeader('cf-aig-gateway-id', 'my-gateway'));
 });
 
 test('an already-prefixed model id is not double-prefixed', function () {

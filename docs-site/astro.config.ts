@@ -16,11 +16,12 @@ const nimbusConfig = defineNimbusConfig({
   // GitHub link in the header.
   github: "https://github.com/meirdick/laravel-cf-workersai",
   socialImageAlt: "laravel-cf-workersai documentation",
-  // The home page leads the sidebar; every other page joins it automatically.
+  // The landing page (index) stays out of the sidebar. Overview leads it.
   sidebar: {
     items: [
-      "index",
+      "overview",
       "quickstart",
+      { label: "Clef and Clairic", autogenerate: { directory: "system-one" } },
       { label: "Concepts", autogenerate: { directory: "concepts" } },
       { label: "Guides", autogenerate: { directory: "guides" } },
       { label: "Reference", autogenerate: { directory: "reference" } },
