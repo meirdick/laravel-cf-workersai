@@ -10,8 +10,9 @@ sidebar:
 - Text, embeddings, Clef classification, Clairic extraction and image input.
 - Clairic is a Cloudflare preview model. Its behavior can change.
 - Clef and Clairic do not use the `/compat` path. A `url` that ends in `/compat` throws for those calls.
-- No document, audio or video attachments.
-- No Laravel AI provider tools.
+- Chat models take no audio or video attachments. Documents need `convert_documents`. See [Documents](/guides/documents/).
+- `nova-3` cannot run through AI Gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
+- No Laravel AI provider tools. [`CloudflareWebSearch`](/guides/web-search/) is a normal tool that searches the web.
 - No request concurrency limit. The package retries HTTP 429. It does not prevent it.
 - The package does not check model names.
 - The package does not set up your AI Gateway. Create and configure it in the Cloudflare dashboard.
@@ -68,7 +69,7 @@ No. Requests go to the URL that your config resolves to.
 
 ### Is the package production ready?
 
-Version 1.2.0 is current. The 1.x line follows semantic versioning, and 1.0.0 was the first stable release. It supports `laravel/ai` 0.9 to 1.3. Clairic is a Cloudflare preview model, so test it on your own data. Read the [changelog](/changelog/) before you upgrade.
+Version 1.3.0 is current. The 1.x line follows semantic versioning, and 1.0.0 was the first stable release. It supports `laravel/ai` 0.9 to 1.3. Clairic is a Cloudflare preview model, so test it on your own data. Read the [changelog](/changelog/) before you upgrade.
 
 ### How do I report a bug?
 

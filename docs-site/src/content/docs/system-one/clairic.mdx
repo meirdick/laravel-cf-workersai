@@ -108,6 +108,10 @@ if ($total->isPresent(0.1) && $total->confidence() >= 0.9) {
 
 On a forecast answer, `value()`, `median()`, `p10()` and `p90()` return a list with one item per step. `steps()` returns the same figures grouped by step.
 
+## Read a PDF
+
+Clairic reads text and images. For a PDF or a Word file, convert it first with [`Markdown::of()`](/guides/documents/#convert-a-document-yourself).
+
 ## Set the reference date
 
 A date written without a year needs an anchor. A field that depends on today's date needs one too.
@@ -193,4 +197,4 @@ Clairic has the same failures as [Clef](/system-one/clef/#errors). A blank state
 
 ## Cost
 
-Cloudflare charges for input tokens only. Read the count with `$invoice->usage`: `inputTokens` on `laravel/ai` 1.x, `promptTokens` on earlier versions. `WorkersAiUsageReported` does not fire for Clairic. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Cloudflare charges for input tokens only. Read the count with `$invoice->usage`: `inputTokens` on `laravel/ai` 1.x, `promptTokens` on earlier versions. `WorkersAiUsageReported` reports the neuron figure. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

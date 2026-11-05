@@ -1,10 +1,10 @@
 {
     "name": "meirdick/laravel-cf-workersai",
-    "description": "Cloudflare Workers AI provider for the Laravel AI SDK, with Clef decisions, Clairic typed extraction, AI Gateway routing and non-answer detection.",
+    "description": "Cloudflare Workers AI provider for the Laravel AI SDK: text, embeddings, reranking, images, speech, transcription, Clef decisions and Clairic typed extraction, with AI Gateway routing.",
     "homepage": "https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/",
     "type": "library",
     "license": "MIT",
-    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway", "llm", "embeddings", "reasoning", "clef", "clairic", "classification", "extraction", "system-one"],
+    "keywords": ["laravel", "ai", "cloudflare", "workers-ai", "laravel-ai", "ai-gateway", "llm", "embeddings", "reasoning", "clef", "clairic", "reranking", "image-generation", "text-to-speech", "transcription", "whisper", "flux", "classification", "extraction", "system-one"],
     "authors": [
         {
             "name": "Meir Dick",

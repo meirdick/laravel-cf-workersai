@@ -34,7 +34,7 @@ sidebar:
 
 ### RequestException: HTTP request returned status code 401
 
-The message ends with `{"code":10000,"message":"Authentication error"}`. The exception is `Illuminate\Http\Client\RequestException`, not `AiException`.
+A bad API token ends with `{"code":10000,"message":"Authentication error"}`. An authenticated gateway that rejects the request returns `{"code":2009,"message":"Unauthorized"}`. The exception is `Illuminate\Http\Client\RequestException`, not `AiException`.
 
 **Cause.** One of these:
 
@@ -137,17 +137,22 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 **Cause.** Cloudflare returned HTTP 200 with a non-empty `errors`, or `success: false`.
 **Fix.** Read the message. It holds the Cloudflare reason.
 
-### Clef and Clairic use the Workers AI `/ai/run` API, not `/compat`
+### Clef, Clairic, images, audio, transcription and reranking use the Workers AI `/ai/run` API
 
 **Cause.** Your `url` ends in `/compat`.
 **Fix.** Set `account_id`, and `gateway` if you use one. Remove `url`.
 
 ## Attachment errors
 
-### Workers AI does not support document attachments
+### Workers AI chat models do not read document attachments
 
-**Cause.** You attached a non-image file.
-**Fix.** Attach images only. Or extract the document text and put it in the prompt.
+**Cause.** You attached a document, and `convert_documents` is off.
+**Fix.** Set `convert_documents` to `true` on the provider entry, or call `Markdown::of()`. See [Documents](/guides/documents/).
+
+### Workers AI chat models do not accept audio or video attachments
+
+**Cause.** You attached an audio or video file to a chat call.
+**Fix.** Use `Transcription::of()` for speech. See [Speech and transcription](/guides/audio/).
 
 ### Unsupported attachment type
 
@@ -159,9 +164,40 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 **Cause.** One of these:
 
 - You read `usage.neurons` from `$response->raw`, and `raw` is `null`. This happens on `laravel/ai` 0.9, and on streamed calls.
-- The call was Clef or Clairic. They report no neurons, and Cloudflare bills them per input token.
 
-**Fix.** For chat and embeddings, listen for `WorkersAiUsageReported`. It fires for streamed calls too. For Clef and Clairic, read `$response->usage->inputTokens`. See [Cost tracking](/guides/cost-tracking/).
+**Fix.** Listen for `WorkersAiUsageReported`. It fires for streamed calls too. See [Cost tracking](/guides/cost-tracking/).
+
+## Media and search errors
+
+### Input prompt contains NSFW content
+
+**Cause.** Cloudflare's content filter rejected the image prompt. It can flag harmless prompts.
+**Fix.** Reword the prompt, or try another model.
+
+### Workers AI model has a fixed size
+
+**Cause.** You set a size on `flux-1-schnell`, which rejects `width` and `height`.
+**Fix.** Remove the size, or use a FLUX.2 model.
+
+### Workers AI model cannot run through AI Gateway
+
+**Cause.** You called `nova-3` with a gateway set. Cloudflare's REST API rejects its audio body through a gateway.
+**Fix.** Use a provider entry with no gateway for that call, or use `whisper-large-v3-turbo`. See [Non-JSON models](/concepts/routes/#non-json-models).
+
+### Workers AI model does not label speakers
+
+**Cause.** You called `diarize()` on a Whisper model.
+**Fix.** Use `@cf/deepgram/nova-3`.
+
+### Web search failed. No provider key is configured on this gateway
+
+**Cause.** That gateway cannot bill the search, and has no stored key for it.
+**Fix.** Use the tool's default gateway, `default`, or store a key on the named gateway. See [Web search](/guides/web-search/).
+
+### The model ignores Laravel AI's WebSearch tool
+
+**Cause.** Workers AI cannot run provider tools. On `laravel/ai` 1.1 and later, Laravel AI removes them with no error.
+**Fix.** Use `CloudflareWebSearch`. See [Web search](/guides/web-search/).
 
 ## Upgrade errors
 

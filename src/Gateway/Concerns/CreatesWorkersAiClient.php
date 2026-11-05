@@ -67,7 +67,7 @@ trait CreatesWorkersAiClient
         // in `cf-aig-authorization` *in addition to* the provider credential
         // in `Authorization`. Without it the gateway rejects the request
         // before it reaches Workers AI, and the error it returns is a bare
-        // Cloudflare `{"code":10000,"message":"Authentication error"}` that
+        // Cloudflare `{"code":2009,"message":"Unauthorized"}` that
         // names neither the gateway nor the missing header.
         if (! empty($additionalConfig['gateway_token'])) {
             $headers['cf-aig-authorization'] = 'Bearer '.$additionalConfig['gateway_token'];

@@ -46,7 +46,7 @@ final class RunEndpoint
 
         if (BaseUrl::isCompatEndpoint($base)) {
             throw new InvalidArgumentException(
-                'Clef and Clairic use the Workers AI `/ai/run` API, not `/compat`. '
+                'Clef, Clairic, images, audio, transcription and reranking use the Workers AI `/ai/run` API, not `/compat`. '
                 .'Set `account_id` (and `gateway` to route through an AI Gateway). '
                 .'A `/compat` `url` has no account to build the run URL from.'
             );
@@ -63,6 +63,79 @@ final class RunEndpoint
             'url' => $base.'/run/'.$model,
             'gateway' => $gateway,
         ];
+    }
+
+    /**
+     * The URL for a multipart run.
+     *
+     * Cloudflare rejects multipart on `/ai/run` with a `cf-aig-gateway-id`
+     * header: HTTP 500 `Invalid request body`, measured 2026-11-05 on flux-2.
+     * The gateway's own `workers-ai/` path accepts it, and there an
+     * authenticated gateway needs `gateway_token`. Direct calls stay on
+     * `/ai/run`.
+     *
+     * @param  array<string, mixed>  $config  the provider's additionalConfiguration()
+     */
+    public static function multipartUrl(array $config, string $model): string
+    {
+        $resolved = self::resolve($config, $model);
+        $accountId = self::nonEmpty($config['account_id'] ?? null);
+        $gateway = self::gateway($config);
+
+        if ($accountId === null || $gateway === null) {
+            return $resolved['url'];
+        }
+
+        return BaseUrl::providerUrl($accountId, $gateway, 'workers-ai/'.self::bareModel($model));
+    }
+
+    /**
+     * The gateway slug, from the `gateway` key or a `cf-aig-gateway-id` header.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    public static function gateway(array $config): ?string
+    {
+        $gateway = self::nonEmpty($config['gateway'] ?? null);
+
+        if ($gateway !== null) {
+            return $gateway;
+        }
+
+        foreach (is_array($config['headers'] ?? null) ? $config['headers'] : [] as $name => $value) {
+            if (strtolower((string) $name) === 'cf-aig-gateway-id') {
+                return self::nonEmpty($value);
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The account's `/ai` URL, for APIs with no model in the path, such as
+     * `/ai/tomarkdown` and `/ai/websearch`.
+     *
+     * @param  array<string, mixed>  $config  the provider's additionalConfiguration()
+     */
+    public static function accountBase(array $config): string
+    {
+        BaseUrl::build($config);
+
+        $accountId = self::nonEmpty($config['account_id'] ?? null);
+
+        if ($accountId !== null) {
+            return "https://api.cloudflare.com/client/v4/accounts/{$accountId}/ai";
+        }
+
+        $base = rtrim((string) self::nonEmpty($config['url'] ?? null), '/');
+
+        if (str_ends_with($base, '/ai/v1')) {
+            return substr($base, 0, -strlen('/v1'));
+        }
+
+        throw new InvalidArgumentException(
+            'Markdown conversion and web search need `account_id`, or a `url` that ends in `/ai/v1`.'
+        );
     }
 
     /**

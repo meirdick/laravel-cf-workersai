@@ -1,0 +1,107 @@
+---
+title: Image generation
+description: Generate images with Laravel AI's Image API and the models Cloudflare hosts, with reference images on FLUX.2.
+sidebar:
+  order: 6.1
+---
+
+The package adds Workers AI to Laravel AI's `Image` API. It needs no extra config, and works on the [direct route and the gateway route](/concepts/routes/).
+
+To send an image to a chat model, see [Image input](/guides/image-input/) instead.
+
+## Generate an image
+
+```php
+use Laravel\Ai\Image;
+
+$image = Image::of('A green apple on a wooden table.')
+    ->landscape()
+    ->quality('medium')
+    ->generate(provider: 'workers-ai');
+
+$path = $image->store('images', 'public');
+
+$bytes = (string) $image;
+$mime = $image->images->first()->mime;
+```
+
+## Size and quality
+
+| Method | Sends |
+| --- | --- |
+| `square()` | 1024 x 1024 |
+| `portrait()` | 832 x 1248 |
+| `landscape()` | 1248 x 832 |
+| `size('512x384')` | The width and height you give |
+| `quality('low')` | 4 inference steps |
+| `quality('medium')` | 8 inference steps |
+| `quality('high')` | 20 inference steps |
+
+With no size or quality, Cloudflare uses the model's defaults. More steps take longer and cost more. `flux-1-schnell` allows at most 8 steps, so the package caps it there.
+
+## Choose a model
+
+The default is `@cf/black-forest-labs/flux-2-klein-4b`. To change it, set `models.image.default` on the provider entry in `config/ai.php`, or pass `model:` to `generate()`. Each model has its own limits. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
+
+| Model | Size | Reference images |
+| --- | --- | --- |
+| `@cf/black-forest-labs/flux-2-klein-4b`, `flux-2-klein-9b`, `flux-2-dev` | Yes | Yes |
+| `@cf/black-forest-labs/flux-1-schnell` | No. A size throws. | No |
+| `@cf/bytedance/stable-diffusion-xl-lightning`, `@cf/stabilityai/stable-diffusion-xl-base-1.0`, `@cf/lykon/dreamshaper-8-lcm` | Yes | No |
+| `@cf/leonardo/lucid-origin`, `@cf/leonardo/phoenix-1.0` | Yes | No |
+
+To use a model's other inputs, add them with `withProviderOptions()`. It needs `laravel/ai` 1.0 or later.
+
+```php
+Image::of('A green apple.')
+    ->withProviderOptions(['seed' => 42])
+    ->generate(provider: 'workers-ai');
+```
+
+## Use reference images
+
+FLUX.2 models take up to 4 reference images. Cloudflare says each one must be smaller than 512 x 512. In the prompt, refer to them by position or in plain words.
+
+```php
+use Laravel\Ai\Files\Image as ImageFile;
+
+$image = Image::of('Take the subject of image 1 and style it like image 0.')
+    ->attachments([
+        ImageFile::fromPath(storage_path('app/style.png')),
+        ImageFile::fromPath(storage_path('app/subject.png')),
+    ])
+    ->generate(provider: 'workers-ai');
+```
+
+A fifth image throws before a request. So does an attachment on a model that does not take one.
+
+## Omit the provider name
+
+Laravel AI's `default_for_images` is `gemini` until you change it. Set it in `config/ai.php` to omit `provider:`:
+
+```php
+'default_for_images' => 'workers-ai',
+```
+
+## FLUX.2 and AI Gateway
+
+FLUX.2 models send multipart, so with a gateway they use the gateway's own URL. On an authenticated gateway, they need `gateway_token`, on both the gateway route and the header route. Other image models need only `key`. See [Non-JSON models](/concepts/routes/#non-json-models).
+
+## Errors
+
+Cloudflare's content filter can reject a prompt with `400 Input prompt contains NSFW content`, and it can flag harmless prompts. In tests on 2026-11-05, it rejected "A green apple on a wooden table." on `phoenix-1.0` in 3 of 8 runs. The same prompt passed on the other models tested. Try again, reword the prompt, or use another model.
+
+## Test your code
+
+```php
+use Laravel\Ai\Image;
+
+Image::fake();
+
+// run your code, then:
+Image::assertGenerated(fn ($prompt) => $prompt->contains('apple'));
+```
+
+## Cost
+
+Cloudflare bills images in neurons. One `flux-1-schnell` image at 1 step cost 57.6 neurons in a test on 2026-11-05. The package reports the figure with `WorkersAiUsageReported`. See [Cost tracking](/guides/cost-tracking/).

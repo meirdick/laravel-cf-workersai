@@ -7,7 +7,7 @@ sidebar:
 
 ## The three parts
 
-**Workers AI** is the Cloudflare service that hosts models. You call it over HTTP. Cloudflare bills generative models in neurons. It bills Clef and Clairic per input token.
+**Workers AI** is the Cloudflare service that hosts models. You call it over HTTP. Cloudflare meters most models in neurons. It prices Clef and Clairic per input token.
 
 **AI Gateway** is an optional Cloudflare proxy between your app and the model. It adds request logs, cost analytics, caching and rate limits. You set it up in the Cloudflare dashboard. The package only sends requests to it.
 
@@ -24,6 +24,9 @@ The package registers one driver in the Laravel AI manager. The driver name is `
 | `agent()`, `Embeddings::for()` | One gateway class, `WorkersAiGateway` | OpenAI-compatible, `/ai/v1` or `/compat` |
 | `Classification::of()`, `Str::decide()` | `WorkersAiClassificationGateway`, on `laravel/ai` 1.0 and later | `/ai/run/{model}` |
 | `Extraction::of()` | `WorkersAiExtractionGateway`, on all versions | `/ai/run/{model}` |
+| `Reranking::of()`, `Image::of()`, `Audio::of()`, `Transcription::of()` | One gateway class for each | `/ai/run/{model}` |
+| `Markdown::of()`, `convert_documents` | `WorkersAiMarkdownGateway` | `/ai/tomarkdown` |
+| `CloudflareWebSearch` | The tool itself | `/ai/websearch` |
 
 The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as on any other provider.
 
@@ -48,10 +51,11 @@ It reads your config in this order:
 - Retries HTTP 429, 502, 503, 504, 520, 522 and 524.
 - Reads reasoning text from each key that models use.
 
-## What the package does for Clef and Clairic calls
+## What the package does for run API calls
 
-- Sends the model ID in the URL and the short selector, such as `clef`, in the body.
-- Sends images in the `images` field, up to 4, as base64.
+- Sends the model ID in the URL, and the request shape each model needs. Clef and Clairic take a short selector in the body. Some image models take multipart.
+- Reads binary image and audio replies, and returns them as Laravel AI responses.
 - Reads a reply with or without Cloudflare's `result` envelope.
-- Throws `AiException` when a 200 reply has an error or no answers.
+- Throws `AiException` when a 200 reply has an error or no output.
+- Dispatches `WorkersAiUsageReported` with the neuron figure.
 - Applies the same retries, `headers` and failover rules as text calls.

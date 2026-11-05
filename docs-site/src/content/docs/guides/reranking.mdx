@@ -1,0 +1,66 @@
+---
+title: Reranking
+description: Order documents by how well they answer a query, with Laravel AI's Reranking API and a Workers AI model.
+sidebar:
+  order: 5.5
+---
+
+Reranking orders a list of texts by how well each one answers a query. Use it after a vector search: fetch more results than you need with [embeddings](/guides/embeddings/), then keep the best ones.
+
+The package needs no extra config. The `workers-ai` provider entry works on the [direct route and the gateway route](/concepts/routes/).
+
+## Rerank documents
+
+```php
+use Laravel\Ai\Reranking;
+
+$response = Reranking::of([
+    'A hammer is a tool.',
+    'An apple is a fruit.',
+    'A car has wheels.',
+])->limit(2)->rerank('Which one is food?', provider: 'workers-ai');
+
+$response->first()->document; // 'An apple is a fruit.'
+$response->first()->score;    // the relevance score
+$response->first()->index;    // 1, its position in your list
+$response->documents();       // the texts, best first
+```
+
+Without `limit()`, you get every document back in order.
+
+## Rerank a collection
+
+Laravel AI's collection macro also works. The first argument names the field to compare, lists several fields, or gives a closure that returns the text. The result holds your original items, best first.
+
+```php
+$posts = Post::all()->rerank('body', 'How do I reset my password?', provider: 'workers-ai');
+
+$posts = Post::all()->rerank(['title', 'body'], 'How do I reset my password?', limit: 5, provider: 'workers-ai');
+```
+
+## Omit the provider name
+
+Laravel AI's `default_for_reranking` is `cohere` until you change it. Set it in `config/ai.php` to omit `provider:`:
+
+```php
+'default_for_reranking' => 'workers-ai',
+```
+
+## Choose a model
+
+The default is `@cf/baai/bge-reranker-base`. To change it, set `models.reranking.default` on the provider entry in `config/ai.php`, or pass `model:` to `rerank()`.
+
+## Test your code
+
+```php
+use Laravel\Ai\Reranking;
+
+Reranking::fake();
+
+// run your code, then:
+Reranking::assertReranked(fn ($prompt) => $prompt->query === 'Which one is food?');
+```
+
+## Cost
+
+Cloudflare bills reranking in neurons. The package reports them with `WorkersAiUsageReported`. See [Cost tracking](/guides/cost-tracking/). On `laravel/ai` 1.x, `$response->usage->inputTokens` holds the token count.

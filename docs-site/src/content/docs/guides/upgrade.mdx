@@ -1,11 +1,18 @@
 ---
 title: Upgrade
-description: Move to package version 1.2 from 1.1, 1.0 or 0.8.x. Lists the behavior changes to check.
+description: Move to the current package version from 1.x or 0.8.x. Lists the behavior changes to check.
 sidebar:
   order: 13
 ---
 
 Version 1.0.0 is the first stable release. It supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase.
+
+## From 1.2 to 1.3
+
+Run `composer update meirdick/laravel-cf-workersai`. You do not change your config. Check these points:
+
+- `WorkersAiUsageReported` now also fires for Clef, Clairic and the new run API calls. If a listener adds up spend, it now counts them too.
+- The error for a document or audio attachment has new text. The exception class is the same.
 
 ## From 1.0 or 1.1 to 1.2
 

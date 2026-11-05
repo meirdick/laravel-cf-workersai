@@ -15,12 +15,18 @@ sidebar:
 | Sub-agents and MCP tools | Yes | Mapped as tools. |
 | Structured output | Yes | `json_schema` response format, with optional `#[Strict]` and re-ask. |
 | Embeddings | Yes | Any Workers AI embedding model. |
+| Reranking | Yes | `Reranking::of()` and `Collection::rerank()`. See [Reranking](/guides/reranking/). |
+| Image generation | Yes | `Image::of()`, with reference images on FLUX.2. See [Image generation](/guides/images/). |
+| Speech | Yes | `Audio::of()`. See [Speech and transcription](/guides/audio/). |
+| Transcription | Yes | `Transcription::of()`, with speaker labels on `nova-3`, which cannot use a gateway. See [Speech and transcription](/guides/audio/). |
+| Document attachments | Opt-in | Converted to Markdown with `convert_documents`, or call `Markdown::of()`. See [Documents](/guides/documents/). |
+| Web search | Yes | With the `CloudflareWebSearch` tool. See [Web search](/guides/web-search/). |
 | Image input | Yes | JPEG, PNG, GIF and WebP for uploaded files. See [Image input](/guides/image-input/). |
 | Reasoning text | Yes | Read from `reasoning_content`, `reasoning` or `thinking`. |
 | `reasoning_effort` | Yes | `low`, `medium`, `high`. |
 | AI Gateway | Yes | `/compat` by default. Authenticated Gateway supported. See [AI Gateway](/guides/ai-gateway/). |
 | Failover | Yes | For transient failures. See [Errors and retries](/guides/errors-and-retries/). |
-| Neuron figures | Yes | By event, for chat and embedding calls, streamed or not. Not for Clef or Clairic. |
+| Neuron figures | Yes | By event, on every model call. See [Cost tracking](/guides/cost-tracking/). |
 | Classification (Clef) | Yes | `laravel/ai` 1.0 or later. `Str::decide` and `Collection::decide` work. Fake with `Classification::fake()`. See [Clef](/system-one/clef/). |
 | Extraction (Clairic) | Yes | `Extraction::of()`, not part of `laravel/ai`. Has `Extraction::fake()`, the `Extracting`, `Extracted` and `ExtractionFailed` events, and failover. See [Clairic](/system-one/clairic/). |
 
@@ -28,18 +34,16 @@ sidebar:
 
 | Capability | Behavior |
 | --- | --- |
-| Image generation | Not implemented by this provider. |
-| Audio, transcription | Not implemented by this provider. |
-| Reranking | Not implemented by this provider. |
-| Document attachments | Throws `InvalidArgumentException`. |
-| Audio or video attachments | Throws `InvalidArgumentException`. |
-| Laravel AI provider tools (web search and similar) | Throws `RuntimeException`. |
-| `#[CacheInstructions]` | Has no effect. |
-| Request concurrency limits | Not provided. |
+| Document attachments, with `convert_documents` off | Throws `InvalidArgumentException`. |
+| Audio or video attachments on chat | Throws `InvalidArgumentException`. Use `Transcription` for speech. `clef-omni` reads them through provider options. See [Clef](/system-one/clef/). |
+| Laravel AI provider tools, such as `WebSearch` | On `laravel/ai` 1.1 and later, Laravel AI removes them before the call, with no error. On 0.9 to 1.0, throws `RuntimeException`. For web search, see [Web search](/guides/web-search/). |
+| `#[CacheInstructions]` | Has no effect. Use `session_affinity`. See [Session affinity](/guides/ai-gateway/#session-affinity). |
+| Laravel AI files and stores | Not implemented. Cloudflare's AI Search has no confirmed match for this API. |
+| Request concurrency limits | Not provided. Limit the fan-out in your app. |
 
 ## Models
 
-The package does not keep a list of models. You give the model name, and Cloudflare decides if it exists and if your account can use it. The package treats an ID that starts with `@cf/` or `@hf/` as a Workers AI model. See [Models](/guides/models/) for the package defaults and for test notes.
+The package does not keep a list of models. You give the model name, and Cloudflare decides if it exists and if your account can use it. See [Models](/guides/models/) for the package defaults and for test notes.
 
 ## Laravel AI versions
 
@@ -63,3 +67,4 @@ These features depend on the `laravel/ai` version:
 | Clef (`Classification`, `Str::decide`, `Collection::decide`) | `laravel/ai` 1.0 or later. |
 | Clef image attachments | `laravel/ai` 1.2 or later. |
 | Clairic (`Extraction`) | Every supported version. |
+| `Collection::rerank()`, `Image`, `Audio`, `Transcription`, `Reranking` | Every supported version. |

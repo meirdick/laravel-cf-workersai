@@ -7,10 +7,18 @@ namespace Meirdick\WorkersAi\Providers;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
+use Laravel\Ai\Contracts\Gateway\AudioGateway;
 use Laravel\Ai\Contracts\Gateway\EmbeddingGateway;
+use Laravel\Ai\Contracts\Gateway\ImageGateway;
+use Laravel\Ai\Contracts\Gateway\RerankingGateway;
 use Laravel\Ai\Contracts\Gateway\StepTextGateway;
+use Laravel\Ai\Contracts\Gateway\TranscriptionGateway;
+use Laravel\Ai\Contracts\Providers\AudioProvider;
 use Laravel\Ai\Contracts\Providers\EmbeddingProvider;
+use Laravel\Ai\Contracts\Providers\ImageProvider;
+use Laravel\Ai\Contracts\Providers\RerankingProvider;
 use Laravel\Ai\Contracts\Providers\TextProvider;
+use Laravel\Ai\Contracts\Providers\TranscriptionProvider;
 use Laravel\Ai\Exceptions\AiException;
 use Laravel\Ai\Files\File;
 use Laravel\Ai\Providers\Provider;
@@ -22,8 +30,12 @@ use Meirdick\WorkersAi\Events\Extracting;
 use Meirdick\WorkersAi\Events\ExtractionFailed;
 use Meirdick\WorkersAi\Extraction\Field;
 use Meirdick\WorkersAi\Gateway\FakeExtractionGateway;
+use Meirdick\WorkersAi\Gateway\WorkersAiAudioGateway;
 use Meirdick\WorkersAi\Gateway\WorkersAiExtractionGateway;
 use Meirdick\WorkersAi\Gateway\WorkersAiGateway;
+use Meirdick\WorkersAi\Gateway\WorkersAiImageGateway;
+use Meirdick\WorkersAi\Gateway\WorkersAiRerankingGateway;
+use Meirdick\WorkersAi\Gateway\WorkersAiTranscriptionGateway;
 use Meirdick\WorkersAi\Prompts\ExtractionPrompt;
 use Meirdick\WorkersAi\Responses\ExtractionResponse;
 use Throwable;
@@ -38,12 +50,20 @@ use Throwable;
  * gateway argument from their constructor. Ordinary users via `agent()` /
  * config-driven registration are unaffected.
  */
-class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvider
+class WorkersAiProvider extends Provider implements AudioProvider, EmbeddingProvider, ImageProvider, RerankingProvider, TextProvider, TranscriptionProvider
 {
+    use \Laravel\Ai\Providers\Concerns\GeneratesAudio;
     use \Laravel\Ai\Providers\Concerns\GeneratesEmbeddings;
+    use \Laravel\Ai\Providers\Concerns\GeneratesImages;
     use \Laravel\Ai\Providers\Concerns\GeneratesText;
+    use \Laravel\Ai\Providers\Concerns\GeneratesTranscriptions;
+    use \Laravel\Ai\Providers\Concerns\HasAudioGateway;
     use \Laravel\Ai\Providers\Concerns\HasEmbeddingGateway;
+    use \Laravel\Ai\Providers\Concerns\HasImageGateway;
+    use \Laravel\Ai\Providers\Concerns\HasRerankingGateway;
     use \Laravel\Ai\Providers\Concerns\HasTextGateway;
+    use \Laravel\Ai\Providers\Concerns\HasTranscriptionGateway;
+    use \Laravel\Ai\Providers\Concerns\Reranks;
     use \Laravel\Ai\Providers\Concerns\StreamsText;
 
     protected ?WorkersAiGateway $workersAiGateway = null;
@@ -108,6 +128,26 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     public function embeddingGateway(): EmbeddingGateway
     {
         return $this->embeddingGateway ??= $this->workersAiGateway();
+    }
+
+    public function rerankingGateway(): RerankingGateway
+    {
+        return $this->rerankingGateway ??= new WorkersAiRerankingGateway($this->events);
+    }
+
+    public function imageGateway(): ImageGateway
+    {
+        return $this->imageGateway ??= new WorkersAiImageGateway($this->events);
+    }
+
+    public function audioGateway(): AudioGateway
+    {
+        return $this->audioGateway ??= new WorkersAiAudioGateway($this->events);
+    }
+
+    public function transcriptionGateway(): TranscriptionGateway
+    {
+        return $this->transcriptionGateway ??= new WorkersAiTranscriptionGateway($this->events);
     }
 
     public function extractionGateway(): WorkersAiExtractionGateway
@@ -220,6 +260,68 @@ class WorkersAiProvider extends Provider implements EmbeddingProvider, TextProvi
     public function defaultExtractionModel(): string
     {
         return $this->config['models']['extraction']['default'] ?? ClairicModel::ID;
+    }
+
+    public function defaultRerankingModel(): string
+    {
+        return $this->config['models']['reranking']['default'] ?? '@cf/baai/bge-reranker-base';
+    }
+
+    public function defaultImageModel(): string
+    {
+        return $this->config['models']['image']['default'] ?? '@cf/black-forest-labs/flux-2-klein-4b';
+    }
+
+    public function defaultAudioModel(): string
+    {
+        return $this->config['models']['audio']['default'] ?? '@cf/deepgram/aura-2-en';
+    }
+
+    public function defaultTranscriptionModel(): string
+    {
+        return $this->config['models']['transcription']['default'] ?? '@cf/openai/whisper-large-v3-turbo';
+    }
+
+    /**
+     * Normalize laravel/ai's size and quality for the image gateway.
+     *
+     * `square()`, `portrait()` and `landscape()` send `1:1`, `2:3` and `3:2`. A
+     * `WIDTHxHEIGHT` string also works. Quality maps to inference steps, which
+     * the gateway caps and names for each model.
+     *
+     * @return array{width?: int, height?: int, steps?: int}
+     */
+    public function defaultImageOptions(?string $size = null, ?string $quality = null): array
+    {
+        $dimensions = match (true) {
+            $size === null => [],
+            $size === '1:1' => ['width' => 1024, 'height' => 1024],
+            $size === '2:3' => ['width' => 832, 'height' => 1248],
+            $size === '3:2' => ['width' => 1248, 'height' => 832],
+            (bool) preg_match('/^(\d+)x(\d+)$/', $size, $match) => ['width' => (int) $match[1], 'height' => (int) $match[2]],
+            default => throw new \InvalidArgumentException("Workers AI image size must be 1:1, 2:3, 3:2 or WIDTHxHEIGHT; [{$size}] given."),
+        };
+
+        $steps = match ($quality) {
+            null => [],
+            'low' => ['steps' => 4],
+            'medium' => ['steps' => 8],
+            'high' => ['steps' => 20],
+            default => throw new \InvalidArgumentException("Workers AI image quality must be low, medium or high; [{$quality}] given."),
+        };
+
+        return [...$dimensions, ...$steps];
+    }
+
+    /**
+     * Whether a document attachment on a chat call becomes Markdown text.
+     *
+     * Off by default, because it adds a request to `/ai/tomarkdown` that the
+     * caller did not ask for. With it off, a document attachment throws.
+     */
+    public function convertsDocuments(): bool
+    {
+        return (bool) ($this->config['convert_documents'] ?? false);
     }
 
     public function defaultEmbeddingsDimensions(): int

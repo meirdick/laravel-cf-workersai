@@ -108,7 +108,7 @@ describe('direct Workers AI API', function () {
 
 describe('via Cloudflare AI Gateway', function () {
     beforeEach(function () {
-        configureLiveProvider(['gateway' => getenv('WORKERS_AI_E2E_GATEWAY')]);
+        configureLiveProvider(['gateway' => getenv('WORKERS_AI_E2E_GATEWAY'), 'gateway_token' => getenv('WORKERS_AI_E2E_GATEWAY_TOKEN') ?: null]);
     });
 
     test('text generation routes through the gateway', function () {

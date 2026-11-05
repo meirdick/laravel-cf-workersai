@@ -25,7 +25,7 @@ All routes need a Cloudflare API token with the Account, Workers AI, Read permis
 | --- | --- | --- |
 | Direct | `key`, `account_id` | No |
 | Gateway | `key`, `account_id`, `gateway` | `gateway_token`, only if Authenticated Gateway is on |
-| Direct with a gateway header | `key`, `account_id`, `headers` | No |
+| Direct with a gateway header | `key`, `account_id`, `headers` | `gateway_token`, only on an authenticated gateway, and only for FLUX.2 |
 | Custom | `key`, `url` | Depends on the URL |
 
 Values go in your application's `.env` file. `config/ai.php` reads them with `env()`.
@@ -119,7 +119,7 @@ An empty `gateway` or `gateway_token` is ignored. So the Gateway entry above als
 
 ## Where each call goes
 
-| Route | Text and embeddings | Clef and Clairic |
+| Route | Text and embeddings | Run API calls |
 | --- | --- | --- |
 | Direct | `api.cloudflare.com/client/v4/accounts/{account}/ai/v1` | `api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}` |
 | Gateway | `gateway.ai.cloudflare.com/v1/{account}/{gateway}/compat` | The direct run URL, plus the `cf-aig-gateway-id` header |
@@ -128,7 +128,13 @@ An empty `gateway` or `gateway_token` is ignored. So the Gateway entry above als
 | `url` ending in `/compat` | That URL | Throws. Set `account_id` instead. |
 | Any other `url` | That URL | `{url}/run/{model}` |
 
-Clef and Clairic use a different URL because `/compat` and `/ai/v1` do not serve those models. You do not need a second provider entry. One `workers-ai` entry handles all calls, and Clef and Clairic go through your gateway when you set `gateway`.
+Run API calls are Clef, Clairic, reranking, images, speech and transcription. They use a different URL because `/compat` and `/ai/v1` do not serve those models. You do not need a second provider entry. One `workers-ai` entry handles all calls, and they go through your gateway when you set `gateway`.
+
+Three calls do not follow this table:
+
+- [Non-JSON models](#non-json-models) with a gateway use `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/{model}`.
+- [`Markdown::of()`](/guides/documents/) calls `/ai/tomarkdown` on `api.cloudflare.com`, or on your `url` if it ends in `/ai/v1`. It does not use `gateway`.
+- [`CloudflareWebSearch`](/guides/web-search/) calls `/ai/websearch/` on the same host, and names its own gateway.
 
 ## What works on each route
 
@@ -137,9 +143,10 @@ Clef and Clairic use a different URL because `/compat` and `/ai/v1` do not serve
 | Text, tools, streaming, structured output | Yes | Yes | Yes |
 | Embeddings | Yes | Yes | Yes. Tested on 2026-11-05. Cloudflare's gateway docs do not list this endpoint. |
 | Clef and Clairic | Yes | Yes | Yes |
-| Neuron event for text and embeddings | Yes | Yes | Yes |
+| Reranking, images, speech, transcription | Yes | Yes, except [`nova-3`](#non-json-models) | Yes, except [`nova-3`](#non-json-models) |
+| Neuron event | Yes | Yes | Yes |
 | Gateway logs, analytics, caching, rate limits | No | Yes | Yes |
-| Authenticated Gateway | Not applicable | Needs `gateway_token` | Cloudflare documents `key` as enough |
+| Authenticated Gateway | Not applicable | Needs `gateway_token` | `key` is enough, except for FLUX.2 |
 | Third-party model with `model:` | Yes | No. See below. | Yes |
 
 Set the features that apply to a gateway, such as caching and rate limits, in the Cloudflare dashboard. The package does not set them.
@@ -151,11 +158,33 @@ An authenticated gateway on `gateway.ai.cloudflare.com` needs two credentials on
 - `key` goes in `Authorization` and pays for the Workers AI call.
 - `gateway_token` goes in `cf-aig-authorization` and admits the request to the gateway. It is an AI Gateway token with Run permission.
 
-Clef and Clairic call `api.cloudflare.com`. [Cloudflare's docs](https://developers.cloudflare.com/ai-gateway/configuration/authentication/) say this API reads the API token from `Authorization`, so they do not need `gateway_token`. If you set it, the package still sends the header.
+Without `gateway_token`, or with a wrong one, these calls return HTTP 401.
+
+Run API calls with a JSON body go to `api.cloudflare.com`, which reads the API token from `Authorization`. They do not need `gateway_token`. Clef, Clairic, reranking, speech, Whisper models and JSON image models returned 200 this way on an authenticated gateway, tested on 2026-11-05. If you set the token, the package still sends the header, and the calls still work.
+
+## Non-JSON models
+
+Cloudflare's REST API rejects a non-JSON body through a gateway, so three kinds of model behave differently with a gateway. Tested on 2026-11-05.
+
+| Model | Body | With a gateway |
+| --- | --- | --- |
+| `@cf/black-forest-labs/flux-2-klein-4b`, `flux-2-klein-9b`, `flux-2-dev` | Multipart | Uses `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/{model}`. On an authenticated gateway, needs `gateway_token` on both routes. |
+| `@cf/openai/whisper`, `@cf/openai/whisper-tiny-en` | Raw audio | Sends a JSON byte array instead. `key` is enough. JSON is about 4 times the size of the audio. |
+| `@cf/deepgram/nova-3` | Raw audio | Throws `InvalidArgumentException`. Cloudflare has no form of this request that works through a gateway. |
+
+To use `nova-3` in an app with a gateway, add a second provider entry with no gateway, and pass its name for that call. The call then skips the gateway, so its logs and limits do not apply.
+
+```php
+'workers-ai-direct' => [
+    'driver'     => 'workers-ai',
+    'key'        => env('CLOUDFLARE_AI_API_TOKEN'),
+    'account_id' => env('CLOUDFLARE_ACCOUNT_ID'),
+],
+```
 
 ## Third-party models and the gateway route
 
-The gateway route sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid OpenAI key, so the call returns HTTP 401. Tested on 2026-11-05. Use the direct route for third-party models. See [third-party models](/guides/ai-gateway/#third-party-models).
+The gateway route sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid OpenAI key, so the call returns HTTP 401 with OpenAI's `Incorrect API key provided`. A `gateway_token` does not change this. Tested on 2026-11-05. Use the direct route for third-party models. See [third-party models](/guides/ai-gateway/#third-party-models).
 
 ## Model names
 
@@ -163,4 +192,4 @@ Write bare Workers AI IDs on every route, such as `@cf/openai/gpt-oss-120b`. The
 
 ## The gateway provider path
 
-AI Gateway also has a `workers-ai/v1` path. Set `gateway_path` to use it. It is not the default. On a gateway with Authenticated Gateway on, tests on 2026-09-09 had `401` on embeddings on this path, while chat on the same gateway worked and `/compat` worked for both.
+AI Gateway also has a `workers-ai/v1` path. Set `gateway_path` to use it. It is not the default. On an authenticated gateway, chat and embeddings returned 200 on this path with `gateway_token`, tested on 2026-11-05. Tests on 2026-09-09 had `401` on embeddings on a gateway with authentication on, so `/compat` stays the default.

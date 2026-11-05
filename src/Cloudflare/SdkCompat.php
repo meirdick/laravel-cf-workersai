@@ -4,9 +4,18 @@ declare(strict_types=1);
 
 namespace Meirdick\WorkersAi\Cloudflare;
 
+use Illuminate\Support\Collection;
 use Laravel\Ai\Gateway\StepResponse;
+use Laravel\Ai\Responses\AudioResponse;
+use Laravel\Ai\Responses\Data\ImageUsage;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\RerankingUsage;
 use Laravel\Ai\Responses\Data\TextUsage;
+use Laravel\Ai\Responses\Data\TranscriptionUsage;
 use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\ImageResponse;
+use Laravel\Ai\Responses\RerankingResponse;
+use Laravel\Ai\Responses\TranscriptionResponse;
 
 /**
  * Builds and reads laravel/ai value objects across the 0.x and 1.x shapes.
@@ -54,6 +63,59 @@ final class SdkCompat
         return property_exists(\Laravel\Ai\Responses\EmbeddingsResponse::class, 'usage')
             ? new Usage(inputTokens: $tokens)
             : $tokens;
+    }
+
+    /**
+     * @param  list<\Laravel\Ai\Responses\Data\RankedDocument>  $results
+     * @param  array<string, mixed>|null  $usage  the wire `usage` subtree
+     */
+    public static function rerankingResponse(array $results, ?array $usage, string $provider, string $model): RerankingResponse
+    {
+        $meta = new Meta($provider, $model);
+
+        return self::isV1()
+            ? new RerankingResponse($results, new RerankingUsage(UsageTokens::rawPromptTokens($usage)), $meta)
+            : new RerankingResponse($results, $meta);
+    }
+
+    /**
+     * @param  Collection<int, \Laravel\Ai\Responses\Data\GeneratedImage>  $images
+     * @param  array<string, mixed>|null  $usage  the wire `usage` subtree
+     */
+    public static function imageResponse(Collection $images, ?array $usage, string $provider, string $model): ImageResponse
+    {
+        $tokens = [UsageTokens::rawPromptTokens($usage), UsageTokens::completionTokens($usage)];
+
+        return new ImageResponse(
+            $images,
+            self::isV1() ? new ImageUsage(...$tokens) : new Usage(...$tokens),
+            new Meta($provider, $model),
+        );
+    }
+
+    public static function audioResponse(string $audio, string $provider, string $model, ?string $mime): AudioResponse
+    {
+        $meta = new Meta($provider, $model);
+
+        return self::isV1()
+            ? new AudioResponse($audio, new Usage, $meta, $mime)
+            : new AudioResponse($audio, $meta, $mime);
+    }
+
+    /**
+     * @param  Collection<int, \Laravel\Ai\Responses\Data\TranscriptionSegment>  $segments
+     * @param  array<string, mixed>|null  $usage  the wire `usage` subtree
+     */
+    public static function transcriptionResponse(string $text, Collection $segments, ?array $usage, string $provider, string $model): TranscriptionResponse
+    {
+        $tokens = [UsageTokens::rawPromptTokens($usage), UsageTokens::completionTokens($usage)];
+
+        return new TranscriptionResponse(
+            $text,
+            $segments,
+            self::isV1() ? new TranscriptionUsage(...$tokens) : new Usage(...$tokens),
+            new Meta($provider, $model),
+        );
     }
 
     /** Uncached prompt tokens, the figure 0.x reported. */

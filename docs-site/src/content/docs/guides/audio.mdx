@@ -1,0 +1,123 @@
+---
+title: Speech and transcription
+description: Turn text into speech and audio into text with Laravel AI's Audio and Transcription APIs and Workers AI models.
+sidebar:
+  order: 6.2
+---
+
+The package adds Workers AI to Laravel AI's `Audio` and `Transcription` APIs. Both need no extra config, and work on the [direct route and the gateway route](/concepts/routes/). The exception is `nova-3`.
+
+## Generate speech
+
+```php
+use Laravel\Ai\Audio;
+
+$audio = Audio::of('Your order has shipped.')->generate(provider: 'workers-ai');
+
+$path = $audio->store('audio', 'public');
+$bytes = (string) $audio;
+$mime = $audio->mime; // audio/mpeg
+```
+
+The default model is `@cf/deepgram/aura-2-en`. To change it, set `models.audio.default` on the provider entry in `config/ai.php`, or pass `model:` to `generate()`.
+
+| Model | Voices |
+| --- | --- |
+| `@cf/deepgram/aura-2-en` | `luna`, `asteria`, `orion`, `zeus` and others |
+| `@cf/deepgram/aura-2-es` | `carina`, `celeste`, `nestor`, `javier` and others |
+| `@cf/deepgram/aura-1` | `luna`, `angus`, `asteria`, `orion` and others |
+| `@cf/myshell-ai/melotts` | No voices. Set the language with `lang`. |
+
+Choose a voice with `voice()`. `male()` and `female()` pick `orion` and `luna`, or `nestor` and `carina` on the Spanish model.
+
+```php
+Audio::of('Hello.')->voice('asteria')->generate(provider: 'workers-ai');
+
+Audio::of('Hello.')
+    ->withProviderOptions(['lang' => 'fr'])
+    ->generate(provider: 'workers-ai', model: '@cf/myshell-ai/melotts');
+```
+
+`withProviderOptions()` needs `laravel/ai` 1.0 or later. On Aura models, it also accepts `encoding`, `container`, `sample_rate` and `bit_rate`. These models have no input for `instructions()`, so that method has no effect here.
+
+## Transcribe audio
+
+```php
+use Laravel\Ai\Transcription;
+
+$transcript = Transcription::fromPath(storage_path('app/call.mp3'))
+    ->language('en')
+    ->generate(provider: 'workers-ai');
+
+$transcript->text;
+
+foreach ($transcript->segments as $segment) {
+    $segment->text;
+    $segment->startSeconds;
+    $segment->endSeconds;
+}
+```
+
+`Transcription::fromStorage()`, `fromUpload()` and `fromBase64()` also work.
+
+The default model is `@cf/openai/whisper-large-v3-turbo`. To change it, set `models.transcription.default` on the provider entry in `config/ai.php`, or pass `model:` to `generate()`.
+
+| Model | `language()` | `diarize()` | Segments are |
+| --- | --- | --- | --- |
+| `@cf/openai/whisper-large-v3-turbo` | Yes | No | Phrases |
+| `@cf/deepgram/nova-3` (no gateway) | Yes | Yes | One per speaker turn |
+| `@cf/openai/whisper` | No | No | Words |
+| `@cf/openai/whisper-tiny-en` | No, English only | No | Words |
+
+Accuracy varies, so test your own audio. In tests on 2026-11-05 with synthetic speech, `whisper-tiny-en` heard "invoice" as "inblice", and `whisper-large-v3-turbo` once heard it as "in-place".
+
+`nova-3` cannot run through AI Gateway, so it throws when a gateway is set. Use a provider entry with no gateway for that call. The Whisper models work through a gateway, with `key` alone. See [Non-JSON models](/concepts/routes/#non-json-models).
+
+## Label speakers
+
+Only `nova-3` labels speakers. `diarize()` on another model throws before a request. A speaker-labeled call therefore cannot go through a gateway. Speakers are named `speaker_0`, `speaker_1` and so on.
+
+```php
+$transcript = Transcription::fromPath(storage_path('app/call.mp3'))
+    ->diarize()
+    ->generate(provider: 'workers-ai', model: '@cf/deepgram/nova-3');
+
+foreach ($transcript->segments as $segment) {
+    echo "{$segment->speaker}: {$segment->text}\n";
+}
+```
+
+## Long audio
+
+Laravel AI sends a 30-second timeout unless you set one. For long audio, set a longer one:
+
+```php
+Transcription::fromPath($path)->timeout(300)->generate(provider: 'workers-ai');
+```
+
+## Omit the provider name
+
+Laravel AI's defaults are `openai` until you change them. Set them in `config/ai.php` to omit `provider:`:
+
+```php
+'default_for_audio' => 'workers-ai',
+'default_for_transcription' => 'workers-ai',
+```
+
+## Test your code
+
+```php
+use Laravel\Ai\Audio;
+use Laravel\Ai\Transcription;
+
+Audio::fake();
+Transcription::fake(['Hello']);
+
+// run your code, then:
+Audio::assertGenerated(fn ($prompt) => $prompt->contains('shipped'));
+Transcription::assertGenerated(fn ($prompt) => true);
+```
+
+## Cost
+
+Cloudflare bills speech and transcription in neurons. The package reports them with `WorkersAiUsageReported`. See [Cost tracking](/guides/cost-tracking/).

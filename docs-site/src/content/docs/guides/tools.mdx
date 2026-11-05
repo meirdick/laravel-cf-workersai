@@ -91,7 +91,9 @@ On the turn after the tool result, the package changes a forced `tool_choice` to
 
 ## Provider tools are not supported
 
-Laravel AI provider tools, such as web search, do not work with this package. It throws `RuntimeException` with the message `Workers AI does not support [ToolName] provider tools.` Write a normal tool that calls the service yourself.
+Laravel AI provider tools, such as `WebSearch`, run inside a provider's own API, and Workers AI has none. On `laravel/ai` 1.1 and later, Laravel AI removes them before the call, so the model answers without them and you get no error. On 0.9 to 1.0, the package throws `RuntimeException` with the message `Workers AI does not support [ToolName] provider tools.`
+
+For web search, use [`CloudflareWebSearch`](/guides/web-search/). For anything else, write a normal tool that calls the service.
 
 ## Limit the steps
 
