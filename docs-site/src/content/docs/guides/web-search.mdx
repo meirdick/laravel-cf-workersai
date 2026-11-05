@@ -1,0 +1,76 @@
+---
+title: Web search
+description: Give a Workers AI model web search with a normal tool that calls Cloudflare's Web Search API.
+sidebar:
+  order: 3.5
+---
+
+Laravel AI's `WebSearch` provider tool runs inside the provider's own API. Cloudflare has no such feature on chat calls, so that tool cannot run on Workers AI.
+
+Cloudflare does have a [Web Search API](https://developers.cloudflare.com/web-search/). `CloudflareWebSearch` is a normal tool that calls it. It runs in your app, and works with any model that calls tools.
+
+<Aside type="caution" title="Laravel AI's WebSearch tool is ignored here">
+  On `laravel/ai` 1.1 and later, Laravel AI removes `WebSearch` before the call, because this provider cannot run it. The model answers without searching, and you get no error. On 0.9 to 1.0, the package throws `RuntimeException`. Use `CloudflareWebSearch` instead.
+</Aside>
+
+## Before you start
+
+- Load [AI Gateway credits](https://developers.cloudflare.com/ai-gateway/features/unified-billing/#load-credits) on your account, or store a search provider's key on a gateway. Cloudflare bills each search.
+- Use a model that calls tools, such as `@cf/openai/gpt-oss-120b`. The package's default text model does not.
+
+The tool uses the `key` from your `workers-ai` provider entry. In a test on 2026-11-05, a token with Workers AI Read searched the `default` gateway. Cloudflare's docs also list AI Gateway Read for this API, so add it if you get a permission error.
+
+## Give the tool to a model
+
+```php
+use Meirdick\WorkersAi\Tools\CloudflareWebSearch;
+
+use function Laravel\Ai\agent;
+
+$response = agent(
+    'Search the web, then answer in one short sentence.',
+    tools: [new CloudflareWebSearch(limit: 3)],
+)->prompt(
+    'What is Cloudflare Workers AI?',
+    provider: 'workers-ai',
+    model: '@cf/openai/gpt-oss-120b',
+);
+```
+
+The model sends a query. The tool returns a JSON list of results, each with a `url`, `title` and `description`. Laravel AI runs the tool loop, as for any other tool. See [Tools](/guides/tools/).
+
+## Options
+
+| Argument | Default | Description |
+| --- | --- | --- |
+| `limit` | `5` | Results per search, 1 to 10. |
+| `searchProvider` | none | `ceramic`, `exa` or `linkup`. Cloudflare's default is `ceramic`. |
+| `gateway` | `default` | The AI Gateway that runs and bills the search. |
+| `byokAlias` | none | The alias of a provider key stored on the gateway. |
+| `provider` | `workers-ai` | The Laravel AI provider entry that holds your credentials. |
+
+The tool uses the `default` gateway even when your provider entry sets `gateway`. In tests on 2026-11-05, two named gateways with no stored key returned `400 web_search_byok_not_configured`, and `default` returned results. To use a named gateway, store a key on it and pass `gateway:`.
+
+## Search without a model
+
+```php
+$results = (new CloudflareWebSearch(limit: 3))->search('Laravel release dates');
+
+$results[0]['url'];
+```
+
+## Errors
+
+A failed search throws `AiException` with Cloudflare's message, such as `No provider key is configured on this gateway`. The tool needs `account_id`, or a `url` that ends in `/ai/v1`. A `url` that ends in `/compat` throws.
+
+## Test your code
+
+Fake the HTTP call:
+
+```php
+use Illuminate\Support\Facades\Http;
+
+Http::fake(['*/ai/websearch/' => Http::response([
+    'items' => [['url' => 'https://example.com', 'title' => 'Example', 'description' => 'A result.']],
+])]);
+```

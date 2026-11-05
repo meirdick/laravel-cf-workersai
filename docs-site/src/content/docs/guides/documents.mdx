@@ -1,0 +1,92 @@
+---
+title: Documents
+description: Read PDF, Word, Excel and other files with Workers AI, by converting them to Markdown with Cloudflare's toMarkdown API.
+sidebar:
+  order: 6.3
+---
+
+Workers AI chat models do not read document files. Cloudflare's `/ai/tomarkdown` API converts them to text first. The package uses it in two ways: you call it yourself, or it runs for each document attachment.
+
+Cloudflare's list includes PDF, DOCX, XLSX, ODT, ODS, CSV and HTML. See [Markdown conversion](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/) for the full list. Cloudflare says most conversions are free. Images can use paid models.
+
+## Attach a document to a prompt
+
+Set `convert_documents` on the provider entry in `config/ai.php`:
+
+```php
+'workers-ai' => [
+    // ...
+    'convert_documents' => true,
+],
+```
+
+Then attach a document as on any other Laravel AI provider:
+
+```php
+use Laravel\Ai\Files\Document;
+
+use function Laravel\Ai\agent;
+
+$response = agent('You answer questions about invoices.')->prompt(
+    'What is the invoice number?',
+    attachments: [Document::fromPath(storage_path('app/invoice.pdf'))],
+    provider: 'workers-ai',
+);
+```
+
+The package converts the file, then adds the text to your message. It works with every chat model, because the model only sees text. Image attachments in the same message stay images.
+
+This setting is off by default, because it adds a request you did not write. With it off, a document attachment throws `InvalidArgumentException`.
+
+The text counts toward your token cap and your cost. A long document can need a higher `#[MaxTokens]` and a model with a larger context window.
+
+## Convert a document yourself
+
+Use `Markdown::of()` when you want the text, such as for a [Clef](/system-one/clef/) or [Clairic](/system-one/clairic/) state. It does not need `convert_documents`.
+
+```php
+use Laravel\Ai\Files\Document;
+use Meirdick\WorkersAi\Extraction;
+use Meirdick\WorkersAi\Extraction\Number;
+use Meirdick\WorkersAi\Markdown;
+
+$text = Markdown::of(Document::fromPath(storage_path('app/invoice.pdf')))->convert();
+
+$invoice = Extraction::of($text)
+    ->field('total', new Number(unit: 'USD'))
+    ->extract();
+```
+
+`Markdown::of()` also takes an uploaded file. To use another provider entry, or a longer timeout than 60 seconds, pass them to `convert()`:
+
+```php
+Markdown::of($request->file('report'))->convert(provider: 'workers-ai-backup', timeout: 120);
+```
+
+The output starts with a heading and a metadata list, followed by the contents. Cloudflare sets this format.
+
+## Requirements
+
+- `account_id`, or a `url` that ends in `/ai/v1`. A `url` that ends in `/compat` throws. With `account_id`, calls go to `api.cloudflare.com` even when `gateway` is set, because the package does not route this API through a gateway.
+- A document with a known type. A file with no MIME type and no file extension throws before a request.
+
+## Errors
+
+| Result | Exception |
+| --- | --- |
+| Cloudflare cannot read the file | `AiException` that names the file and the reason |
+| HTTP 429, 502, 503, 504, 520, 522, 524 after retries | The same failover exceptions as other calls |
+| Any other non-2xx status | `Illuminate\Http\Client\RequestException` |
+
+## Test your code
+
+`Markdown` has no fake of its own. Fake the HTTP call:
+
+```php
+use Illuminate\Support\Facades\Http;
+
+Http::fake(['*/ai/tomarkdown' => Http::response([
+    'success' => true,
+    'result' => [['name' => 'a.pdf', 'format' => 'markdown', 'data' => '# Invoice']],
+])]);
+```

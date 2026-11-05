@@ -165,6 +165,10 @@ Laravel AI has one default for each kind of call. Set the defaults in `config/ai
 'default' => 'workers-ai',
 'default_for_embeddings' => 'workers-ai',
 'default_for_classification' => 'workers-ai',
+'default_for_reranking' => 'workers-ai',
+'default_for_images' => 'workers-ai',
+'default_for_audio' => 'workers-ai',
+'default_for_transcription' => 'workers-ai',
 ```
 
 Laravel AI's `default_for_classification` is `typesafe` until you change it. A Clef call with no `provider:` goes to TypeSafe until then, and `Str::decide()` does too. `Extraction` finds the `workers-ai` provider without a default.
@@ -172,5 +176,6 @@ Laravel AI's `default_for_classification` is `typesafe` until you change it. A C
 ## Next steps
 
 - Use [Clef](/system-one/clef/) for decisions and [Clairic](/system-one/clairic/) for typed values.
+- Add [reranking](/guides/reranking/), [images](/guides/images/), [speech and transcription](/guides/audio/), [documents](/guides/documents/) or [web search](/guides/web-search/).
 - [Pick a model](/guides/models/), and set [`reasoning_effort`](/guides/reasoning/) for reasoning models.
 - Move to the gateway later with [AI Gateway](/guides/ai-gateway/).

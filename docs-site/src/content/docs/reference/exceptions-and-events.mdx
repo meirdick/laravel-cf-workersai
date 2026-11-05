@@ -30,20 +30,20 @@ These come from Laravel AI, Laravel or PHP, not from the package's own classes:
 | `Laravel\Ai\Exceptions\InsufficientCreditsException` | HTTP 402. |
 | `Laravel\Ai\Exceptions\ProviderConnectionException` | Network failure or timeout (`laravel/ai` 0.11 and later). |
 | `InvalidArgumentException` | Config errors: no `account_id` or `url`, both set, a URL in `account_id` or `gateway`. A `workers-ai/`-prefixed model on the direct API. `reasoning_effort` outside `low`, `medium`, `high`. A document or unsupported attachment. A model that is not Clef or Clairic on those calls. More than 4 images on Clef or Clairic. A `/compat` `url` on a Clef or Clairic call. |
-| `RuntimeException` | A provider tool was given. |
+| `RuntimeException` | A provider tool was given, on `laravel/ai` 0.9 to 1.0. Later versions remove the tool with no error. |
 
 ## Events
 
 | Class | Dispatched | Properties |
 | --- | --- | --- |
-| `WorkersAiUsageReported` | Once per chat or embeddings call that reports `usage.neurons`. Streamed calls too (since 1.0.1), once per step after the last chunk. | `provider`, `model`, `neurons`, `promptTokens`, `completionTokens`, `reasoningTokens` |
+| `WorkersAiUsageReported` | Once per model call that reports neurons. Streamed calls too, once per step after the last chunk. | `provider`, `model`, `neurons`, `promptTokens`, `completionTokens`, `reasoningTokens` |
 | `Extracting` | Before a Clairic call. | `invocationId`, `provider`, `model`, `prompt` |
 | `Extracted` | After a Clairic call succeeds. | `invocationId`, `provider`, `model`, `prompt`, `response` |
 | `ExtractionFailed` | When a Clairic call throws. The exception is thrown again after the event. | `invocationId`, `provider`, `model`, `prompt`, `exception` |
 
 All four are in `Meirdick\WorkersAi\Events`. `prompt` is a `Meirdick\WorkersAi\Prompts\ExtractionPrompt`. `response` is an `ExtractionResponse`.
 
-`WorkersAiUsageReported` is for chat and embeddings only. Clef and Clairic do not dispatch it, because Cloudflare bills them per input token. Read `$response->usage->inputTokens` instead. See [Cost tracking](/guides/cost-tracking/).
+`WorkersAiUsageReported` fires for chat, embeddings, Clef, Clairic, images, speech, transcription and reranking. See [Cost tracking](/guides/cost-tracking/).
 
 ## Attribute
 

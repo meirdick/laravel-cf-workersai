@@ -73,6 +73,22 @@ Http::assertSent(fn (Request $request) => str_ends_with($request->url(), '/chat/
 
 If your test config sets `gateway`, use the pattern `gateway.ai.cloudflare.com/*`.
 
+## Fake images, speech, transcription and reranking
+
+Laravel AI's fakes work on this provider, and send no request. See [Image generation](/guides/images/#test-your-code), [Speech and transcription](/guides/audio/#test-your-code) and [Reranking](/guides/reranking/#test-your-code).
+
+```php
+use Laravel\Ai\Audio;
+use Laravel\Ai\Image;
+use Laravel\Ai\Reranking;
+use Laravel\Ai\Transcription;
+
+Image::fake();
+Audio::fake();
+Transcription::fake(['Hello']);
+Reranking::fake();
+```
+
 ## Test the neuron event
 
 ```php
@@ -148,4 +164,4 @@ Each Clairic call dispatches `Extracting`, then `Extracted` or `ExtractionFailed
 
 ## Live tests
 
-The package repository has live tests that call Cloudflare. They are skipped unless you set `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT`. Set `WORKERS_AI_E2E_GATEWAY` for gateway tests, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep. You do not need them to use the package.
+The package repository has live tests that call Cloudflare. They are skipped unless you set `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT`. Set `WORKERS_AI_E2E_GATEWAY` for gateway tests, `WORKERS_AI_E2E_WEB_SEARCH=1` for web search, `WORKERS_AI_E2E_ARTIFACTS` to keep generated files, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep. You do not need them to use the package.

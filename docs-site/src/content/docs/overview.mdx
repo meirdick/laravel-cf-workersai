@@ -13,6 +13,12 @@ description: What the package does, what it adds to Laravel AI, and where to sta
 | Create embeddings | `Embeddings::for()` | `@cf/baai/bge-large-en-v1.5` |
 | Answer typed questions about an input | `Classification::of()`, `Str::decide()` | `@cf/cloudflare/clef` |
 | Read or predict typed values from an input | `Extraction::of()` | `@cf/cloudflare/clairic` |
+| Order documents by relevance | `Reranking::of()` | `@cf/baai/bge-reranker-base` |
+| Generate images | `Image::of()` | `@cf/black-forest-labs/flux-2-klein-4b` |
+| Turn text into speech | `Audio::of()` | `@cf/deepgram/aura-2-en` |
+| Turn audio into text | `Transcription::of()` | `@cf/openai/whisper-large-v3-turbo` |
+| Read PDF, Word and Excel files | `Markdown::of()`, `convert_documents` | Cloudflare's `/ai/tomarkdown` |
+| Search the web from a tool call | `CloudflareWebSearch` | Cloudflare's Web Search API |
 
 Clef uses the Laravel AI classification API. Clairic has no Laravel AI API, so the package adds `Extraction`. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).
 
@@ -23,10 +29,10 @@ Laravel AI's `openai-compatible` driver can call a Cloudflare URL. It is enough 
 - Sends a 4096 token cap by default. With no cap, Cloudflare stops most models at 256 tokens.
 - Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text.
 - Sends `reasoning_effort`, which Laravel AI does not have.
-- Reports the neurons Cloudflare bills, with the `WorkersAiUsageReported` event.
+- Reports the neurons Cloudflare meters on every model call, with the `WorkersAiUsageReported` event.
 - Retries HTTP 429 and Cloudflare edge errors, and maps them for Laravel AI failover.
 - Sends the second token that an authenticated AI Gateway needs.
-- Calls Clef and Clairic, which the `openai-compatible` driver cannot reach.
+- Calls Clef, Clairic, images, speech, transcription and reranking, which the `openai-compatible` driver cannot reach on Cloudflare.
 
 ## How it reaches Cloudflare
 

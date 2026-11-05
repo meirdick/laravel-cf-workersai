@@ -1,17 +1,17 @@
 ---
 title: Cost tracking
-description: Record Cloudflare neurons per call with the WorkersAiUsageReported event or the raw response. Read token usage for Clef and Clairic.
+description: Record Cloudflare neurons per call with the WorkersAiUsageReported event or the raw response.
 sidebar:
   order: 11
 ---
 
-Cloudflare bills Workers AI chat and embeddings in neurons, not tokens. Every chat endpoint returns a neuron count in `usage.neurons`. A cost model built on token counts gives the wrong number.
+Cloudflare meters Workers AI in neurons, not tokens. Every model call returns a neuron figure, in `usage.neurons` or a `cf-ai-neurons` header. A cost model built on token counts gives the wrong number.
 
 The Laravel AI usage objects (`Usage`, `TextUsage`) and `Meta` have no field for neurons. The package gives you two ways to read them: an event and the raw response.
 
 ## Listen for the event
 
-The package dispatches `Meirdick\WorkersAi\Events\WorkersAiUsageReported` once per model call, for chat and embeddings. A tool loop with two steps dispatches two events.
+The package dispatches `Meirdick\WorkersAi\Events\WorkersAiUsageReported` once per model call. This covers chat, embeddings, Clef, Clairic, images, speech, transcription and reranking. A tool loop with two steps dispatches two events.
 
 ```php
 use Illuminate\Support\Facades\Event;
@@ -29,11 +29,11 @@ The event has these public properties:
 | `provider` | `string` | The provider name from your config. |
 | `model` | `string` | The model name sent to Cloudflare. On `/compat` it has the `workers-ai/` prefix. |
 | `neurons` | `float` | The neuron count for this call. |
-| `promptTokens` | `int` | Uncached prompt tokens, on both `laravel/ai` lines. |
+| `promptTokens` | `int` | Uncached prompt tokens on chat, on both `laravel/ai` lines. The reported input count on run API calls. |
 | `completionTokens` | `int` | Completion tokens. |
 | `reasoningTokens` | `int` | Reasoning tokens. |
 
-The package dispatches nothing when the response has no `neurons` field.
+The package dispatches nothing when the reply has no neuron figure, or the figure is 0.
 
 ## Streamed requests
 
@@ -72,14 +72,18 @@ $response->usage->cacheReadInputTokens; // null when absent
 
 See [AI Gateway](/guides/ai-gateway/) for a measured example.
 
-## Clef and Clairic
+## Calls on the run API
 
-Clef and Clairic do not dispatch `WorkersAiUsageReported`, and their replies carry no neuron figure. Cloudflare bills them per input token. Read the count from the response:
+Clef, Clairic, images, speech, transcription and reranking use `/ai/run`. They dispatch the same event, with `provider`, `model` and `neurons`. `promptTokens` and `completionTokens` hold the counts the model reports, as Cloudflare sends them. Speech and binary images report no tokens, so those fields are 0.
+
+A `$response->raw` is not available on these calls. Use the event. Token counts are on the response where the model reports them:
 
 ```php
 $response->usage->inputTokens;   // laravel/ai 1.x
-$response->usage->promptTokens;  // laravel/ai 0.9 to 0.11 (Clairic only)
+$response->usage->promptTokens;  // laravel/ai 0.9 to 0.11
 ```
+
+Cloudflare prices Clef and Clairic per input token, with no charge for output. See the pricing page below.
 
 ## Order of magnitude
 

@@ -65,6 +65,18 @@ The package does not read these variables by itself. Each one takes effect when 
             'extraction' => [
                 'default' => '@cf/cloudflare/clairic',
             ],
+            'reranking' => [
+                'default' => '@cf/baai/bge-reranker-base',
+            ],
+            'image' => [
+                'default' => '@cf/black-forest-labs/flux-2-klein-4b',
+            ],
+            'audio' => [
+                'default' => '@cf/deepgram/aura-2-en',
+            ],
+            'transcription' => [
+                'default' => '@cf/openai/whisper-large-v3-turbo',
+            ],
         ],
     ],
 ],
@@ -100,6 +112,11 @@ The package resolves the endpoint in this order: `url`, then `account_id` with `
 | `models.embeddings.dimensions` | int | `1024` | Dimensions reported to Laravel AI. Not sent to Cloudflare. |
 | `models.classification.default` | string | `@cf/cloudflare/clef` | Clef model for `Classification::of()->classify()` when the call names none. Needs `laravel/ai` 1.0 or later. |
 | `models.classification.cheapest` | string | `@cf/cloudflare/clef-flash` | Returned by `cheapestClassificationModel()`. Not selected automatically. |
+| `models.reranking.default` | string | `@cf/baai/bge-reranker-base` | Reranking model. |
+| `models.image.default` | string | `@cf/black-forest-labs/flux-2-klein-4b` | Image model. |
+| `models.audio.default` | string | `@cf/deepgram/aura-2-en` | Speech model. |
+| `models.transcription.default` | string | `@cf/openai/whisper-large-v3-turbo` | Transcription model. |
+| `convert_documents` | bool | `false` | Convert document attachments on chat calls to Markdown. See [Documents](/guides/documents/). |
 | `models.extraction.default` | string | `@cf/cloudflare/clairic` | Clairic model for `Extraction::of()->extract()` when the call names none. |
 
 ## Default classification provider

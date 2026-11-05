@@ -23,7 +23,7 @@ Write the bare name, such as `@cf/openai/gpt-oss-120b`. Do not write `workers-ai
 
 ## Third-party models
 
-The package treats a model ID as a Workers AI model when it starts with `@cf/` or `@hf/`. It sends any other name, such as `openai/gpt-5.5`, unchanged. On `/ai/v1`, a third-party model uses Cloudflare billing: AI Gateway credits (Unified Billing) or a stored provider key. See [AI Gateway](/guides/ai-gateway/).
+The package sends a name that does not start with `@cf/`, such as `openai/gpt-5.5`, unchanged. On `/ai/v1`, a third-party model uses Cloudflare billing: AI Gateway credits (Unified Billing) or a stored provider key. See [AI Gateway](/guides/ai-gateway/).
 
 ## Set the model
 

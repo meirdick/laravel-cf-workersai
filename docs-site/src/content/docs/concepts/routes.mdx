@@ -119,7 +119,7 @@ An empty `gateway` or `gateway_token` is ignored. So the Gateway entry above als
 
 ## Where each call goes
 
-| Route | Text and embeddings | Clef and Clairic |
+| Route | Text and embeddings | Run API calls |
 | --- | --- | --- |
 | Direct | `api.cloudflare.com/client/v4/accounts/{account}/ai/v1` | `api.cloudflare.com/client/v4/accounts/{account}/ai/run/{model}` |
 | Gateway | `gateway.ai.cloudflare.com/v1/{account}/{gateway}/compat` | The direct run URL, plus the `cf-aig-gateway-id` header |
@@ -128,7 +128,13 @@ An empty `gateway` or `gateway_token` is ignored. So the Gateway entry above als
 | `url` ending in `/compat` | That URL | Throws. Set `account_id` instead. |
 | Any other `url` | That URL | `{url}/run/{model}` |
 
-Clef and Clairic use a different URL because `/compat` and `/ai/v1` do not serve those models. You do not need a second provider entry. One `workers-ai` entry handles all calls, and Clef and Clairic go through your gateway when you set `gateway`.
+Run API calls are Clef, Clairic, reranking, images, speech and transcription. They use a different URL because `/compat` and `/ai/v1` do not serve those models. You do not need a second provider entry. One `workers-ai` entry handles all calls, and they go through your gateway when you set `gateway`.
+
+Three calls do not follow this table:
+
+- FLUX.2 image models with a gateway use `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/{model}`, because Cloudflare rejects multipart with the header. See [Image generation](/guides/images/#flux2-and-ai-gateway).
+- [`Markdown::of()`](/guides/documents/) calls `/ai/tomarkdown` on `api.cloudflare.com`, or on your `url` if it ends in `/ai/v1`. It does not use `gateway`.
+- [`CloudflareWebSearch`](/guides/web-search/) calls `/ai/websearch/` on the same host, and names its own gateway.
 
 ## What works on each route
 
@@ -137,7 +143,8 @@ Clef and Clairic use a different URL because `/compat` and `/ai/v1` do not serve
 | Text, tools, streaming, structured output | Yes | Yes | Yes |
 | Embeddings | Yes | Yes | Yes. Tested on 2026-11-05. Cloudflare's gateway docs do not list this endpoint. |
 | Clef and Clairic | Yes | Yes | Yes |
-| Neuron event for text and embeddings | Yes | Yes | Yes |
+| Reranking, images, speech, transcription | Yes | Yes | Yes |
+| Neuron event | Yes | Yes | Yes |
 | Gateway logs, analytics, caching, rate limits | No | Yes | Yes |
 | Authenticated Gateway | Not applicable | Needs `gateway_token` | Cloudflare documents `key` as enough |
 | Third-party model with `model:` | Yes | No. See below. | Yes |
