@@ -34,7 +34,7 @@ sidebar:
 
 ### RequestException: HTTP request returned status code 401
 
-The message ends with `{"code":10000,"message":"Authentication error"}`. The exception is `Illuminate\Http\Client\RequestException`, not `AiException`.
+A bad API token ends with `{"code":10000,"message":"Authentication error"}`. An authenticated gateway that rejects the request returns `{"code":2009,"message":"Unauthorized"}`. The exception is `Illuminate\Http\Client\RequestException`, not `AiException`.
 
 **Cause.** One of these:
 
@@ -179,6 +179,11 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 **Cause.** You set a size on `flux-1-schnell`, which rejects `width` and `height`.
 **Fix.** Remove the size, or use a FLUX.2 model.
 
+### Workers AI model cannot run through AI Gateway
+
+**Cause.** You called `nova-3` with a gateway set. Cloudflare's REST API rejects its audio body through a gateway.
+**Fix.** Use a provider entry with no gateway for that call, or use `whisper-large-v3-turbo`. See [Non-JSON models](/concepts/routes/#non-json-models).
+
 ### Workers AI model does not label speakers
 
 **Cause.** You called `diarize()` on a Whisper model.
@@ -186,8 +191,8 @@ The message ends with `{"code":10000,"message":"Authentication error"}`. The exc
 
 ### Web search failed. No provider key is configured on this gateway
 
-**Cause.** A named gateway has no stored search key.
-**Fix.** Use the default `gateway` of `default`, or store a key on the named gateway. See [Web search](/guides/web-search/).
+**Cause.** That gateway cannot bill the search, and has no stored key for it.
+**Fix.** Use the tool's default gateway, `default`, or store a key on the named gateway. See [Web search](/guides/web-search/).
 
 ### The model ignores Laravel AI's WebSearch tool
 

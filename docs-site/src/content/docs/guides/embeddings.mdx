@@ -41,4 +41,4 @@ The config key `models.embeddings.dimensions` defaults to `1024`. The package re
 
 ## Gateway note
 
-Embeddings on the gateway provider path `workers-ai/v1` can return `401 Authentication error` when the gateway has Authenticated Gateway on. The default `/compat` path does not. Remove `gateway_path` to use `/compat`. See [Routes](/concepts/routes/).
+Embeddings on the gateway provider path `workers-ai/v1` returned `401` on an authenticated gateway in tests on 2026-09-09, and 200 with `gateway_token` on 2026-11-05. The default `/compat` path does not. Remove `gateway_path` to use `/compat`. See [Routes](/concepts/routes/).

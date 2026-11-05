@@ -85,9 +85,7 @@ Laravel AI's `default_for_images` is `gemini` until you change it. Set it in `co
 
 ## FLUX.2 and AI Gateway
 
-FLUX.2 models take multipart form data. Cloudflare rejects multipart on `/ai/run` with the `cf-aig-gateway-id` header, and returns `500 Invalid request body`. So when a gateway is set, the package sends these calls to the gateway's own URL, `gateway.ai.cloudflare.com/v1/{account}/{gateway}/workers-ai/{model}`.
-
-That URL enforces Authenticated Gateway. On an authenticated gateway, FLUX.2 needs `gateway_token`, as text calls do. See [Authenticated Gateway](/guides/ai-gateway/#authenticated-gateway).
+FLUX.2 models send multipart, so with a gateway they use the gateway's own URL. On an authenticated gateway, they need `gateway_token`, on both the gateway route and the header route. Other image models need only `key`. See [Non-JSON models](/concepts/routes/#non-json-models).
 
 ## Errors
 

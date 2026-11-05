@@ -31,14 +31,16 @@ Adds Cloudflare's other model types, through laravel/ai's own APIs.
 
 ### Notes
 
-- **FLUX.2 with a gateway uses the gateway's own URL.** Measured 2026-11-05: `/ai/run` with `cf-aig-gateway-id` answers multipart with `500 Invalid request body`, and `gateway.ai.cloudflare.com/.../workers-ai/{model}` accepts it. On an authenticated gateway, FLUX.2 needs `gateway_token`.
-- **Web search uses the `default` gateway.** Measured 2026-11-05: two named gateways with no stored key returned `400 web_search_byok_not_configured`, and `default` returned results.
+- **Non-JSON bodies and gateways, measured 2026-11-05.** `/ai/run` with `cf-aig-gateway-id` answers FLUX.2 multipart and raw audio with `500 Invalid request body`. FLUX.2 uses `gateway.ai.cloudflare.com/.../workers-ai/{model}`, which accepts multipart, so on an authenticated gateway it needs `gateway_token`. `whisper` and `whisper-tiny-en` send a JSON byte array. `nova-3` throws `InvalidArgumentException` when a gateway is set: raw audio on the gateway's URL returned `400 corrupt or unsupported data`, multipart hung, and every JSON form failed validation. The package does not skip a gateway silently.
+- **Authenticated Gateway, measured 2026-11-05.** With no token or a wrong one, `/compat` and the gateway's `workers-ai/` path return 401 `{"code":2009,"message":"Unauthorized"}`. With the token, they return 200, and `workers-ai/v1` embeddings do too. On `api.cloudflare.com`, Clef, Clairic, reranking, speech, chat, embeddings and JSON image models return 200 with `key` alone.
+- **Web search uses the `default` gateway.** Measured 2026-11-05: `default` and one named gateway returned results. Two other named gateways returned `400 web_search_byok_not_configured`.
 
 ### Verified
 
-- laravel/ai v0.9.1: 286 passed, 106 skipped. v0.10.3: 289 passed, 103 skipped. v0.11.2: 289 passed, 103 skipped. v1.0.0: 316 passed, 76 skipped. v1.3.0: 319 passed, 73 skipped.
-- Live, 2026-11-05, on v1.3.0: 35 passed. On v1.0.0: 32 passed, 3 skipped. On v0.11.2: 28 passed, 7 skipped. Direct, through an AI Gateway, and with the gateway header. Skips are Clef on v0.11.2, and web search and third-party models, which ran on v1.3.0 only.
-- Not verified: an authenticated gateway. The gateways tested have authentication off. FLUX.2 on an authenticated gateway relies on `gateway_token`, which the package sends on that URL.
+- laravel/ai v0.9.1: 290 passed, 112 skipped. v0.10.3: 293 passed, 109 skipped. v0.11.2: 293 passed, 109 skipped. v1.0.0: 320 passed, 82 skipped. v1.3.0: 323 passed, 79 skipped.
+- Live, 2026-11-05, open gateway, on v1.3.0: 35 passed. This includes web search and third-party models.
+- Live, 2026-11-05, authenticated gateway, on v1.3.0: 38 passed, 3 skipped. On v1.0.0: 38 passed, 3 skipped. On v0.11.2: 34 passed, 7 skipped. Skips are Clef on v0.11.2, and web search and third-party models, which ran on the open gateway run.
+- Not verified: gateway logs. No local token can read them.
 
 ## [1.2.0] - 2026-11-05
 
@@ -71,7 +73,7 @@ Adds Cloudflare's other model types, through laravel/ai's own APIs.
 - laravel/ai v0.9.1: 242 passed, 88 skipped. v0.10.3: 245 passed, 85 skipped. v0.11.2: 245 passed, 85 skipped. v1.0.0: 270 passed, 60 skipped. v1.3.0: 273 passed, 57 skipped.
 - Live, 2026-11-05, on v0.11.2, v1.0.0 and v1.3.0, direct and through an AI Gateway: parsed Clef and Clairic answers, including all three Clef models, images, `Str::decide()`, forecasts and `return_state_text`. Clef tests skip on v0.11.2. The same Clef and Clairic tests fail on the 1.1.0 tag.
 - Live, 2026-11-05, on v1.3.0: `openai/gpt-4.1-mini` returned 200 on the direct API and 401 on `/compat` with a Cloudflare token.
-- Not verified: an authenticated gateway with only `key` on `api.cloudflare.com`. Cloudflare's docs say it works. The gateways tested have authentication off.
+- An authenticated gateway with only `key` on `api.cloudflare.com` was not tested for this release. It was tested in 1.3.0, and works.
 
 ## [1.1.0] - 2026-11-05
 

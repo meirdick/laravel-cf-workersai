@@ -17,6 +17,7 @@ The package now covers Cloudflare's other model types, through the Laravel AI co
 - **Documents.** `Markdown::of()` converts PDF, Word, Excel and other files. `convert_documents` does it for attachments on chat calls. See [Documents](/guides/documents/).
 - **Web search.** `CloudflareWebSearch` is a normal tool. See [Web search](/guides/web-search/).
 - **Neurons on every model call.** `WorkersAiUsageReported` now fires for Clef, Clairic and the new calls.
+- **Tested on an authenticated gateway.** Text and embeddings need `gateway_token`. Other calls need only `key`, except FLUX.2. `nova-3` cannot run through a gateway, and throws. See [Non-JSON models](/concepts/routes/#non-json-models).
 - **Docs corrected.** Laravel AI provider tools do not throw on `laravel/ai` 1.1 and later. They are removed with no error. A document or audio attachment has a clearer error.
 
 ## 1.2.0 (2026-11-05)

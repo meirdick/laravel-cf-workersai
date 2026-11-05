@@ -11,6 +11,7 @@ sidebar:
 - Clairic is a Cloudflare preview model. Its behavior can change.
 - Clef and Clairic do not use the `/compat` path. A `url` that ends in `/compat` throws for those calls.
 - Chat models take no audio or video attachments. Documents need `convert_documents`. See [Documents](/guides/documents/).
+- `nova-3` cannot run through AI Gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
 - No Laravel AI provider tools. [`CloudflareWebSearch`](/guides/web-search/) is a normal tool that searches the web.
 - No request concurrency limit. The package retries HTTP 429. It does not prevent it.
 - The package does not check model names.

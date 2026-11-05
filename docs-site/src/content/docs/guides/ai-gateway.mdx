@@ -67,13 +67,13 @@ CLOUDFLARE_AI_GATEWAY_TOKEN=your-gateway-token
 
 The package sends `cf-aig-authorization: Bearer <gateway_token>`. Your `key` still goes in `Authorization`. If `gateway_token` is empty, the package does not send the header.
 
-Clef and Clairic do not need the gateway token. They call `api.cloudflare.com`, and [Cloudflare's docs](https://developers.cloudflare.com/ai-gateway/configuration/authentication/) say this API reads your API token from `Authorization`.
+Calls to `api.cloudflare.com`, such as Clef and Clairic, do not need the gateway token. That API reads your API token from `Authorization`. Tested on 2026-11-05. FLUX.2 image models do need it. See [Non-JSON models](/concepts/routes/#non-json-models).
 
-Without the header, an authenticated gateway returns HTTP 401 with `{"code":10000,"message":"Authentication error"}`. Laravel throws `Illuminate\Http\Client\RequestException`. The message does not name the gateway or the header, so check `gateway_token` first.
+Without the header, or with a wrong token, an authenticated gateway returns HTTP 401 with `{"code":2009,"message":"Unauthorized"}`. Laravel throws `Illuminate\Http\Client\RequestException`. The message does not name the gateway or the header, so check `gateway_token` first.
 
 ## Direct route with a gateway header
 
-Cloudflare's REST API on `api.cloudflare.com` also routes through a gateway. Send the `cf-aig-gateway-id` header on the direct route. It needs no `gateway` key and no second token. Cloudflare documents this for authenticated gateways too.
+Cloudflare's REST API on `api.cloudflare.com` also routes through a gateway. Send the `cf-aig-gateway-id` header on the direct route. It needs no `gateway` key, and no second token even on an authenticated gateway. FLUX.2 is the exception, and `nova-3` cannot use a gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
 
 Keep the slug in your application's `.env` file, as `CLOUDFLARE_AI_GATEWAY`, and read it in `config/ai.php`:
 
@@ -103,7 +103,7 @@ agent()->prompt('Hello', provider: 'workers-ai', model: 'openai/gpt-5.5');
 - The token needs Account, Workers AI, Read, the same as other calls. Tested on 2026-11-05 with `openai/gpt-4.1-mini`.
 
 <Aside type="caution" title="Do not use the gateway key for third-party models">
-  With `gateway` set, the call goes to `/compat` and the package sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid provider key, so the call returns HTTP 401. Tested on 2026-11-05.
+  With `gateway` set, the call goes to `/compat` and the package sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid provider key, so the call returns HTTP 401 with OpenAI's `Incorrect API key provided`. Tested on 2026-11-05.
 </Aside>
 
 ## Use another provider's driver through a gateway
@@ -132,7 +132,7 @@ To use `<gateway>/workers-ai/v1` instead of `/compat`, set `gateway_path`:
 'gateway_path' => 'workers-ai/v1',
 ```
 
-On some gateways this path returns 401 for embeddings. See [The gateway provider path](/concepts/routes/#the-gateway-provider-path).
+`/compat` stays the default. See [The gateway provider path](/concepts/routes/#the-gateway-provider-path).
 
 ## Use a custom URL
 

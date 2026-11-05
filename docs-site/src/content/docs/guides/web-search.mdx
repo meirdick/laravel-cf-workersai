@@ -49,7 +49,7 @@ The model sends a query. The tool returns a JSON list of results, each with a `u
 | `byokAlias` | none | The alias of a provider key stored on the gateway. |
 | `provider` | `workers-ai` | The Laravel AI provider entry that holds your credentials. |
 
-The tool uses the `default` gateway even when your provider entry sets `gateway`. In tests on 2026-11-05, two named gateways with no stored key returned `400 web_search_byok_not_configured`, and `default` returned results. To use a named gateway, store a key on it and pass `gateway:`.
+The tool uses the `default` gateway even when your provider entry sets `gateway`. In tests on 2026-11-05, `default` and one named gateway returned results, and two other named gateways returned `400 web_search_byok_not_configured`. If that error appears on a gateway you pass with `gateway:`, store a provider key on it, or use `default`.
 
 ## Search without a model
 

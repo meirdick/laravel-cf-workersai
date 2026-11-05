@@ -77,7 +77,7 @@ Cloudflare exposes Workers AI at three URLs, and they behave differently. Measur
 | Path | Chat | Embeddings | Model ID form |
 |---|---|---|---|
 | `gateway.ai.cloudflare.com/v1/<acct>/<gw>/compat` | 200 | 200 | prefixed **or** bare |
-| `gateway.ai.cloudflare.com/v1/<acct>/<gw>/workers-ai/v1` | 200 | 200 **or 401** | bare only |
+| `gateway.ai.cloudflare.com/v1/<acct>/<gw>/workers-ai/v1` | 200 | 200 **or 401** (2026-11-05: 200 with `gateway_token` on an authenticated gateway) | bare only |
 | `api.cloudflare.com/client/v4/accounts/<acct>/ai/v1` | 200 | 200 | bare only (prefixed → **400**) |
 
 The middle row is the trap, and it took two gateways to see it properly. Measured across two AI Gateways on one account:
@@ -307,7 +307,7 @@ Both post to `POST /accounts/{account}/ai/run/{model}`. `/compat` and `/ai/v1` d
 - **Clairic** has no laravel/ai parent, so `Extraction` and `PendingExtraction` copy the shape of `Classification` and `PendingClassification`. Keep them aligned when laravel/ai changes those classes. `FakeExtractionGateway` is bound in the container, so it resets with the app.
 - **Reply envelope.** Measured 2026-11-05: the REST API wraps Clef and Clairic replies in `{result, success, errors: []}`, direct and with a gateway header. Cloudflare's model pages show them unwrapped. 1.1.0 read the top level, so it failed on every live call, and its unit tests and its status-code live check did not see that. `PostsWorkersAiRun::runPayload()` reads both shapes. `LiveSystemOneTest` asserts parsed answers. Do not treat a 200 as proof that a call worked.
 - **Third-party models.** Measured 2026-11-05 with `openai/gpt-4.1-mini`: `/ai/v1` on `api.cloudflare.com` returned 200 with a Cloudflare token, and `/compat` with the same token returned 401. Cloudflare's BYOK page explains why: `/compat` forwards `Authorization` to the provider.
-- **Not verified.** An authenticated gateway with only `key` on `api.cloudflare.com`. Cloudflare's authentication page says it works, but the two gateways tested have authentication off, and no local token can read gateway settings or logs. So logs for Clef, Clairic and header-routed calls were not read either.
+- **Authenticated Gateway, measured 2026-11-05.** No token or a wrong one: 401 `{"code":2009,"message":"Unauthorized"}` on `/compat` and on the gateway's `workers-ai/` path. Text and embeddings need `gateway_token`. JSON calls to `api.cloudflare.com` with the gateway header need only `key`: Clef, Clairic, reranking, speech, turbo, chat, embeddings, JSON image models. Local tokens cannot read gateway settings or logs.
 - **Worth a future look.** Send all gateway traffic through `api.cloudflare.com` with `cf-aig-gateway-id`. That drops `gateway_token` and the `/compat` prefix. Chat, embeddings, Clef and Clairic all returned 200 that way on 2026-11-05. Not done: it changes the route for existing users, and Cloudflare's gateway docs do not list `/ai/v1/embeddings`.
 
 ## 12c. Run API capabilities (1.3.0)
@@ -316,8 +316,8 @@ Both post to `POST /accounts/{account}/ai/run/{model}`. `/compat` and `/ai/v1` d
 
 Request shapes come from each model's schema (`GET /ai/models/schema?model=`), and they differ inside one capability. Read the class comment on each gateway. A model the gateway does not recognize gets the shape of the largest family.
 
-- **FLUX.2 and gateways.** Multipart on `/ai/run` with `cf-aig-gateway-id` returns `500 Invalid request body`. `RunEndpoint::multipartUrl()` uses the gateway's `workers-ai/` path. This is the one place a run call leaves `api.cloudflare.com`, so it is the one place `gateway_token` matters.
-- **Web search and gateways.** Named gateways with no stored key returned `400 web_search_byok_not_configured`. `default` returned results on the same token. The reason is not known. It may be each gateway's billing setting.
+- **Non-JSON bodies and gateways.** `/ai/run` with `cf-aig-gateway-id` rejects them: `500 Invalid request body`. FLUX.2 multipart works on the gateway's `workers-ai/` path (`RunEndpoint::multipartUrl()`). This is the one place a run call leaves `api.cloudflare.com`, so it is the one place `gateway_token` matters. Whisper raw audio is corrupted there, so with a gateway `whisper` and `whisper-tiny-en` send their JSON byte-array form. `nova-3` has no form that works through a gateway: raw gives 400 `corrupt or unsupported data`, multipart hung past 90 seconds, JSON `audio.body` fails validation. So it throws, and it does not skip the gateway silently, because the app may set one for logs or spend limits. Re-test when Cloudflare documents it.
+- **Web search and gateways.** `default` and `laravel-ai-workersai` returned results. `laravel-ai` and `nex` returned `400 web_search_byok_not_configured` on the same token. The reason is not known. It may be each gateway's billing setting.
 - **Provider tools.** laravel/ai 1.1 added `TextGenerationLoop::toolsSupportedBy()`, which drops them silently. `MapsTools` still throws on 0.9 to 1.0.
 - **`convert_documents`.** The converted text is held in a `WeakMap` by message. The loop re-sends its messages each step, and object IDs can be reused after garbage collection.
 - **Not built.** Batch API (no laravel/ai contract), translation (no laravel/ai API), AI Search as a store (no confirmed match), `#[CacheInstructions]` mapped to session affinity (pins a busy agent to one instance).
@@ -359,7 +359,7 @@ vendor/bin/pest --filter='truncated'
 | `SdkVersionTest` | 0.x/1.x differences: `TextUsage` counts, embeddings `Usage`, `replayBlocks`, and exactly 3 attempts on a persistent 429 or 503 |
 | `UsageMappingTest` | Cached-token subtraction on both paths, the zero clamp, `completion_tokens_details.reasoning_tokens` |
 
-`tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_GATEWAY_TOKEN` for an authenticated gateway, `WORKERS_AI_E2E_THIRD_PARTY_MODEL` for third-party routing and `WORKERS_AI_E2E_WEB_SEARCH=1` for web search, which spend credits, `WORKERS_AI_E2E_ARTIFACTS` to keep generated files, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
+`tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_AUTH_GATEWAY` and `WORKERS_AI_E2E_GATEWAY_TOKEN` for an authenticated gateway, `WORKERS_AI_E2E_THIRD_PARTY_MODEL` for third-party routing and `WORKERS_AI_E2E_WEB_SEARCH=1` for web search, which spend credits, `WORKERS_AI_E2E_ARTIFACTS` to keep generated files, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
 
 CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11`, `^1.0` and `^1.3`. `SdkVersionTest` pins the shapes that differ between 0.x and 1.x. Each test skips on the other major.
 

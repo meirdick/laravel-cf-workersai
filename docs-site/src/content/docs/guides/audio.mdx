@@ -5,7 +5,7 @@ sidebar:
   order: 6.2
 ---
 
-The package adds Workers AI to Laravel AI's `Audio` and `Transcription` APIs. Both need no extra config, and work on the [direct route and the gateway route](/concepts/routes/).
+The package adds Workers AI to Laravel AI's `Audio` and `Transcription` APIs. Both need no extra config, and work on the [direct route and the gateway route](/concepts/routes/). The exception is `nova-3`.
 
 ## Generate speech
 
@@ -65,15 +65,17 @@ The default model is `@cf/openai/whisper-large-v3-turbo`. To change it, set `mod
 | Model | `language()` | `diarize()` | Segments are |
 | --- | --- | --- | --- |
 | `@cf/openai/whisper-large-v3-turbo` | Yes | No | Phrases |
-| `@cf/deepgram/nova-3` | Yes | Yes | One per speaker turn |
+| `@cf/deepgram/nova-3` (no gateway) | Yes | Yes | One per speaker turn |
 | `@cf/openai/whisper` | No | No | Words |
 | `@cf/openai/whisper-tiny-en` | No, English only | No | Words |
 
 Accuracy varies, so test your own audio. In tests on 2026-11-05 with synthetic speech, `whisper-tiny-en` heard "invoice" as "inblice", and `whisper-large-v3-turbo` once heard it as "in-place".
 
+`nova-3` cannot run through AI Gateway, so it throws when a gateway is set. Use a provider entry with no gateway for that call. The Whisper models work through a gateway, with `key` alone. See [Non-JSON models](/concepts/routes/#non-json-models).
+
 ## Label speakers
 
-Only `nova-3` labels speakers. `diarize()` on another model throws before a request. Speakers are named `speaker_0`, `speaker_1` and so on.
+Only `nova-3` labels speakers. `diarize()` on another model throws before a request. A speaker-labeled call therefore cannot go through a gateway. Speakers are named `speaker_0`, `speaker_1` and so on.
 
 ```php
 $transcript = Transcription::fromPath(storage_path('app/call.mp3'))
