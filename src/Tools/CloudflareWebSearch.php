@@ -24,9 +24,9 @@ use Meirdick\WorkersAi\WorkersAiKey;
  * Cloudflare has no web search that runs inside a chat call, so laravel/ai's
  * `WebSearch` provider tool cannot run on Workers AI. This tool runs in your
  * app, and any model that calls tools can use it. Measured 2026-11-05: the
- * `default` gateway bills AI Gateway credits. A named gateway returned 400
- * `web_search_byok_not_configured` until it has a stored provider key, so
- * `default` is the default here even when the provider sets `gateway`.
+ * `default` gateway and one named gateway returned results. Two other named
+ * gateways returned 400 `web_search_byok_not_configured`. The reason is not
+ * known, so `default` is the default here even when the provider sets `gateway`.
  */
 class CloudflareWebSearch implements Tool
 {

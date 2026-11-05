@@ -70,8 +70,8 @@ final class RunEndpoint
      *
      * Cloudflare rejects multipart on `/ai/run` with a `cf-aig-gateway-id`
      * header: HTTP 500 `Invalid request body`, measured 2026-11-05 on flux-2.
-     * The gateway's own `workers-ai/` path accepts it, with or without images.
-     * So a multipart call with a gateway uses that path. Direct calls stay on
+     * The gateway's own `workers-ai/` path accepts it, and there an
+     * authenticated gateway needs `gateway_token`. Direct calls stay on
      * `/ai/run`.
      *
      * @param  array<string, mixed>  $config  the provider's additionalConfiguration()
@@ -80,7 +80,7 @@ final class RunEndpoint
     {
         $resolved = self::resolve($config, $model);
         $accountId = self::nonEmpty($config['account_id'] ?? null);
-        $gateway = $resolved['gateway'] ?? self::gatewayFromHeaders($config);
+        $gateway = self::gateway($config);
 
         if ($accountId === null || $gateway === null) {
             return $resolved['url'];
@@ -90,10 +90,18 @@ final class RunEndpoint
     }
 
     /**
+     * The gateway slug, from the `gateway` key or a `cf-aig-gateway-id` header.
+     *
      * @param  array<string, mixed>  $config
      */
-    private static function gatewayFromHeaders(array $config): ?string
+    public static function gateway(array $config): ?string
     {
+        $gateway = self::nonEmpty($config['gateway'] ?? null);
+
+        if ($gateway !== null) {
+            return $gateway;
+        }
+
         foreach (is_array($config['headers'] ?? null) ? $config['headers'] : [] as $name => $value) {
             if (strtolower((string) $name) === 'cf-aig-gateway-id') {
                 return self::nonEmpty($value);

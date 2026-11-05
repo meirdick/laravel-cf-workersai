@@ -97,7 +97,7 @@ function liveRerank(): void
 
 function liveSpeechBytes(): string
 {
-    $response = Audio::of('Hello there. The invoice total is forty two dollars.')->generate(provider: 'workers-ai');
+    $response = Audio::of('Hello there. The invoice total is forty two dollars.')->timeout(90)->generate(provider: 'workers-ai');
 
     return (string) $response;
 }
@@ -208,21 +208,21 @@ describe('direct', function () use ($noCredentials) {
         expect(strlen($bytes))->toBeGreaterThan(1000)
             ->and($seen)->toHaveCount(1);
 
-        $turbo = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->language('en')->generate(provider: 'workers-ai');
+        $turbo = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->timeout(90)->language('en')->generate(provider: 'workers-ai');
 
-        // Models mishear words in synthetic speech, so assert a word they all
-        // got right. Whisper turbo once wrote "in-place" for "invoice".
-        expect(strtolower($turbo->text))->toContain('total')
+        // Models mishear words in synthetic speech: "in-place" for "invoice" and
+        // "to anel" for "total", on separate runs. Every transcript had the 42.
+        expect(strtolower($turbo->text))->toContain('42')
             ->and($turbo->segments)->not->toBeEmpty();
 
-        $nova = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->diarize()->generate(provider: 'workers-ai', model: '@cf/deepgram/nova-3');
+        $nova = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->timeout(90)->diarize()->generate(provider: 'workers-ai', model: '@cf/deepgram/nova-3');
 
-        expect(strtolower($nova->text))->toContain('total')
+        expect(strtolower($nova->text))->toContain('42')
             ->and($nova->segments->first()->speaker)->toBe('speaker_0');
 
-        $tiny = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->generate(provider: 'workers-ai', model: '@cf/openai/whisper-tiny-en');
+        $tiny = Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->timeout(90)->generate(provider: 'workers-ai', model: '@cf/openai/whisper-tiny-en');
 
-        expect(strtolower($tiny->text))->toContain('total');
+        expect(strtolower($tiny->text))->toContain('42');
     })->skip($noCredentials, 'Needs credentials.');
 
     test('a named voice and melotts return audio', function () {
@@ -257,11 +257,6 @@ describe('direct', function () use ($noCredentials) {
         expect($response->text)->toContain('77');
     })->skip($noCredentials, 'Needs credentials.');
 
-    test('a named gateway web search needs a stored key, and the message says so', function () {
-        expect(fn () => (new CloudflareWebSearch(limit: 1, gateway: env('WORKERS_AI_E2E_GATEWAY')))->search('Cloudflare Workers AI'))
-            ->toThrow(\Laravel\Ai\Exceptions\AiException::class, 'provider key');
-    })->skip(fn () => e2eCredentials() === null || ! env('WORKERS_AI_E2E_GATEWAY'), 'Needs a gateway.');
-
     test('web search returns results, and a model uses the tool', function () {
         $items = (new CloudflareWebSearch(limit: 2))->search('Cloudflare Workers AI');
 
@@ -286,7 +281,15 @@ describe('through a gateway', function () use ($noGateway) {
 
         $bytes = liveSpeechBytes();
 
-        expect(strtolower(Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->generate(provider: 'workers-ai')->text))->toContain('total');
+        expect(strtolower(Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->timeout(90)->generate(provider: 'workers-ai')->text))->toContain('42');
+    })->skip($noGateway, 'Set WORKERS_AI_E2E_GATEWAY.');
+
+    test('whisper models work', function () {
+        $bytes = liveSpeechBytes();
+
+        foreach (['@cf/openai/whisper-tiny-en', '@cf/openai/whisper'] as $model) {
+            expect(strtolower(Transcription::fromBase64(base64_encode($bytes), 'audio/mpeg')->timeout(90)->generate(provider: 'workers-ai', model: $model)->text))->toContain('42');
+        }
     })->skip($noGateway, 'Set WORKERS_AI_E2E_GATEWAY.');
 
     test('markdown conversion works with a gateway configured', function () {
@@ -295,11 +298,16 @@ describe('through a gateway', function () use ($noGateway) {
 });
 
 describe('gateway id header on the direct API', function () use ($noGateway) {
-    beforeEach(fn () => configureLiveProvider(['headers' => ['cf-aig-gateway-id' => env('WORKERS_AI_E2E_GATEWAY')]]));
+    beforeEach(fn () => configureLiveProvider([
+        'headers' => ['cf-aig-gateway-id' => env('WORKERS_AI_E2E_GATEWAY')],
+        'gateway_token' => env('WORKERS_AI_E2E_GATEWAY_TOKEN'),
+    ]));
 
-    test('reranking and flux-2 work', function () {
+    test('reranking, flux-2 and whisper work', function () {
         liveRerank();
 
         assertRealImage((string) Image::of('A red square.')->size('512x512')->quality('low')->generate(provider: 'workers-ai'), 'header-flux2');
+
+        expect(strtolower(Transcription::fromBase64(base64_encode(liveSpeechBytes()), 'audio/mpeg')->timeout(90)->generate(provider: 'workers-ai', model: '@cf/openai/whisper-tiny-en')->text))->toContain('42');
     })->skip($noGateway, 'Set WORKERS_AI_E2E_GATEWAY.');
 });

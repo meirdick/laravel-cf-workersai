@@ -398,6 +398,49 @@ test('diarize on a model with no speaker labels throws', function () {
     Http::assertNothingSent();
 });
 
+test('whisper tiny sends a json byte array through a gateway, because Cloudflare rejects a raw body there', function () {
+    config(['ai.providers.workers-ai.gateway' => 'my-gateway']);
+    Http::fake(['*' => Http::response(runEnvelope(['text' => 'Hi', 'words' => []]))]);
+
+    Transcription::fromBase64(base64_encode('mp3'), 'audio/mpeg')->generate(provider: 'workers-ai', model: '@cf/openai/whisper-tiny-en');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === RUN_URL.'@cf/openai/whisper-tiny-en'
+        && $request->hasHeader('cf-aig-gateway-id', 'my-gateway')
+        && $request->data() === ['audio' => [109, 112, 51]]);
+});
+
+test('whisper tiny with the gateway header in config also sends json', function () {
+    config(['ai.providers.workers-ai.headers' => ['cf-aig-gateway-id' => 'my-gateway']]);
+    Http::fake(['*' => Http::response(runEnvelope(['text' => 'Hi', 'words' => []]))]);
+
+    Transcription::fromBase64(base64_encode('mp3'), 'audio/mpeg')->generate(provider: 'workers-ai', model: '@cf/openai/whisper');
+
+    Http::assertSent(fn (Request $request): bool => $request->data() === ['audio' => [109, 112, 51]]);
+});
+
+test('nova throws with a gateway and names the fix, and does not skip the gateway', function () {
+    Http::fake();
+
+    foreach ([['gateway' => 'my-gateway'], ['headers' => ['cf-aig-gateway-id' => 'my-gateway']]] as $config) {
+        config(['ai.providers.workers-ai' => ['driver' => 'workers-ai', 'key' => 'k', 'account_id' => 'acct123', 'name' => 'workers-ai', ...$config]]);
+        app(\Laravel\Ai\AiManager::class)->forgetInstance('workers-ai');
+
+        expect(fn () => Transcription::fromBase64(base64_encode('mp3'), 'audio/mpeg')->generate(provider: 'workers-ai', model: '@cf/deepgram/nova-3'))
+            ->toThrow(InvalidArgumentException::class, 'cannot run through AI Gateway');
+    }
+
+    Http::assertNothingSent();
+});
+
+test('whisper turbo stays on the run url with the gateway header, because its body is json', function () {
+    config(['ai.providers.workers-ai.gateway' => 'my-gateway']);
+    Http::fake(['*' => Http::response(runEnvelope(['text' => 'Hi', 'segments' => []]))]);
+
+    Transcription::fromBase64(base64_encode('mp3'), 'audio/mpeg')->generate(provider: 'workers-ai');
+
+    Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), RUN_URL) && $request->hasHeader('cf-aig-gateway-id', 'my-gateway'));
+});
+
 test('Transcription::fake replaces the gateway', function () {
     Transcription::fake(['Hello']);
     Http::fake();

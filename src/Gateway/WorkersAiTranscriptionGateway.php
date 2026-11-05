@@ -27,6 +27,12 @@ use Meirdick\WorkersAi\Gateway\Concerns\PostsWorkersAiRun;
  *   - `nova-3` takes the raw audio as the body, and options in the query string.
  *     Only this model labels speakers.
  *   - `whisper` and `whisper-tiny-en` take the raw audio as the body.
+ *
+ * Cloudflare rejects a raw body through a gateway. Measured 2026-11-05: with
+ * the header, 500 `Invalid request body`. On the gateway's own URL, 400
+ * `corrupt or unsupported data`. So with a gateway, the Whisper models send
+ * their JSON form, a byte array. `nova-3` has no JSON form that REST accepts,
+ * so it throws. It does not skip a gateway that the app set for logs or limits.
  */
 class WorkersAiTranscriptionGateway implements TranscriptionGateway
 {
@@ -59,6 +65,13 @@ class WorkersAiTranscriptionGateway implements TranscriptionGateway
             );
         }
 
+        if ($nova && RunEndpoint::gateway($provider->additionalConfiguration()) !== null) {
+            throw new InvalidArgumentException(
+                "Workers AI model '{$model}' cannot run through AI Gateway, because Cloudflare's REST API rejects its audio body there. "
+                .'Use a provider entry with no gateway for this call, or @cf/openai/whisper-large-v3-turbo.'
+            );
+        }
+
         $content = $audio->content();
         $mime = $audio->mimeType() ?: 'application/octet-stream';
 
@@ -84,7 +97,14 @@ class WorkersAiTranscriptionGateway implements TranscriptionGateway
             return $this->postRun($provider, $model, $timeout, $body, null);
         }
 
-        $query = str_contains($model, '/nova-')
+        $nova = str_contains($model, '/nova-');
+        $hasGateway = RunEndpoint::gateway($provider->additionalConfiguration()) !== null;
+
+        if ($hasGateway && ! $nova) {
+            return $this->postRun($provider, $model, $timeout, ['audio' => array_values(unpack('C*', $content) ?: [])], null);
+        }
+
+        $query = $nova
             ? array_filter(array_merge(['smart_format' => true], $options, ['language' => $language, 'diarize' => $diarize ?: null]), fn (mixed $value): bool => $value !== null)
             : [];
 
