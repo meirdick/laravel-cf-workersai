@@ -12,7 +12,15 @@ composer require meirdick/laravel-cf-workersai
 
 PHP `^8.3`. `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0`, tested on v0.9.1, v0.10.3, v0.11.2, v1.0.0 and v1.3.0. For `laravel/ai` 0.7 or 0.8, use this package `^0.5`.
 
-Package discovery registers the provider. Add it to `config/ai.php`:
+Package discovery registers the provider. Add your credentials to your application's `.env` file:
+
+```ini
+CLOUDFLARE_AI_API_TOKEN=
+CLOUDFLARE_ACCOUNT_ID=
+CLOUDFLARE_AI_GATEWAY=        # optional
+```
+
+Then add the provider to `config/ai.php`. It reads those values:
 
 ```php
 'providers' => [
@@ -25,7 +33,7 @@ Package discovery registers the provider. Add it to `config/ai.php`:
 ],
 ```
 
-`key` is a Cloudflare API token with the `Workers AI: Read` permission. `account_id` alone calls Workers AI directly. Add `gateway` to send the same calls through an AI Gateway. `url` replaces both, and cannot be set with `account_id`.
+The token needs the Account, Workers AI, Read permission. `account_id` alone calls Workers AI directly. Add `gateway` to send the same calls through an AI Gateway. `url` replaces both, and cannot be set with `account_id`. An authenticated gateway also needs `gateway_token`. See [Direct and gateway routes](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/concepts/routes/).
 
 ## Text
 
@@ -74,7 +82,9 @@ $invoice = Extraction::of($text)
 $invoice['total']->value();
 ```
 
-Both post to `POST /accounts/{account}/ai/run/{model}`. A configured gateway is the `cf-aig-gateway-id` header on that URL. A `/compat` URL does not serve these models, and the package throws if that is all you configured.
+`Extraction` mirrors `Classification`: `Extraction::fake()`, `assertExtracted()`, events and provider failover. Clairic is a Cloudflare preview model.
+
+Both models work on the direct route and through a gateway, with the same provider entry. A `url` that ends in `/compat` cannot serve them, and the package throws.
 
 ## Why this package
 
@@ -85,7 +95,8 @@ Use this package when you also want a default token cap, an exception on an empt
 The rest of the reference is in the docs:
 
 - [Quickstart](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/quickstart/)
-- [Decisions and extraction](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/decisions/)
+- [Clef](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/system-one/clef/) and [Clairic](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/system-one/clairic/)
+- [Direct and gateway routes](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/concepts/routes/)
 - [AI Gateway](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/ai-gateway/)
 - [Configuration](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/reference/configuration/)
 - [Upgrade to 1.0](https://laravel-cf-workersai-docs.mdick85.workers.dev/docs/guides/upgrade/)

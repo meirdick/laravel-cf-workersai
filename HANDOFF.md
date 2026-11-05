@@ -299,6 +299,17 @@ Gateway contracts did not change. The suite passes on v0.9.1, v0.10.3, v0.11.2, 
 
 Re-run this audit on each laravel/ai minor: diff `src/Gateway`, `src/Responses/Data` and `src/Responses/EmbeddingsResponse.php`.
 
+## 12b. Clef and Clairic (1.1.0, reworked in 1.2.0)
+
+Both post to `POST /accounts/{account}/ai/run/{model}`. `/compat` and `/ai/v1` do not serve them. With `gateway` set, the package adds `cf-aig-gateway-id` and stays on `api.cloudflare.com`, where Cloudflare documents the API token in `Authorization` as enough, even on an authenticated gateway.
+
+- **Clef** uses laravel/ai's classification API. `WorkersAiClassifyingProvider` adds `ClassificationProvider`. It loads only on 1.x. `Classifies` provides events and the fake. `PendingClassification` provides failover. `Str::decide` needs 1.0, `Collection::decide` 1.1, attachments 1.2.
+- **Clairic** has no laravel/ai parent, so `Extraction` and `PendingExtraction` copy the shape of `Classification` and `PendingClassification`. Keep them aligned when laravel/ai changes those classes. `FakeExtractionGateway` is bound in the container, so it resets with the app.
+- **Reply envelope.** Measured 2026-11-05: the REST API wraps Clef and Clairic replies in `{result, success, errors: []}`, direct and with a gateway header. Cloudflare's model pages show them unwrapped. 1.1.0 read the top level, so it failed on every live call, and its unit tests and its status-code live check did not see that. `PostsWorkersAiRun::runPayload()` reads both shapes. `LiveSystemOneTest` asserts parsed answers. Do not treat a 200 as proof that a call worked.
+- **Third-party models.** Measured 2026-11-05 with `openai/gpt-4.1-mini`: `/ai/v1` on `api.cloudflare.com` returned 200 with a Cloudflare token, and `/compat` with the same token returned 401. Cloudflare's BYOK page explains why: `/compat` forwards `Authorization` to the provider.
+- **Not verified.** An authenticated gateway with only `key` on `api.cloudflare.com`. Cloudflare's authentication page says it works, but the two gateways tested have authentication off, and no local token can read gateway settings or logs. So logs for Clef, Clairic and header-routed calls were not read either.
+- **Worth a future look.** Send all gateway traffic through `api.cloudflare.com` with `cf-aig-gateway-id`. That drops `gateway_token` and the `/compat` prefix. Chat, embeddings, Clef and Clairic all returned 200 that way on 2026-11-05. Not done: it changes the route for existing users, and Cloudflare's gateway docs do not list `/ai/v1/embeddings`.
+
 ## 13. Tests
 
 ```bash
@@ -329,10 +340,12 @@ vendor/bin/pest --filter='truncated'
 | `ToolCallLoopTest`, `SubAgentTest` | Tool loop and `CanActAsTool` |
 | `CredentialsTest` | `key` / `api_key` resolution |
 | `HeadersTest` | The `headers` connection key on all three request paths, precedence over package headers |
+| `ClefClassificationTest`, `ClairicExtractionTest` | Run URL, body, images, model checks |
+| `SystemOneParityTest`, `ClairicParityTest` | Reply envelope, 200 errors, 408, `Str::decide`, `Collection::decide`, fakes, events, failover |
 | `SdkVersionTest` | 0.x/1.x differences: `TextUsage` counts, embeddings `Usage`, `replayBlocks`, and exactly 3 attempts on a persistent 429 or 503 |
 | `UsageMappingTest` | Cached-token subtraction on both paths, the zero clamp, `completion_tokens_details.reasoning_tokens` |
 
-`tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
+`tests/Integration/` runs against the real API and skips unless `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT` are set (plus `WORKERS_AI_E2E_GATEWAY` for the gateway tests, `WORKERS_AI_E2E_GATEWAY_TOKEN` for an authenticated gateway, `WORKERS_AI_E2E_THIRD_PARTY_MODEL` for third-party routing, which spends credits, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep). These cost money and take minutes.
 
 CI runs PHP 8.3/8.4/8.5 against laravel/ai `^0.9`, `^0.10`, `^0.11`, `^1.0` and `^1.3`. `SdkVersionTest` pins the shapes that differ between 0.x and 1.x. Each test skips on the other major.
 

@@ -6,7 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-05
+
+**Upgrade from 1.1.0.** Clef and Clairic fail on every live call in 1.1.0. This release fixes them and brings them level with the rest of laravel/ai.
+
+### Added
+
+- **`Extraction` gains what `Classification` gets from laravel/ai.** `Extraction::fake()`, `assertExtracted()`, `assertNotExtracted()`, `assertNothingExtracted()` and `isFaked()`. The `Extracting`, `Extracted` and `ExtractionFailed` events. Failover with `extract(provider: ['workers-ai', 'backup'])`. `when()` and `unless()`, `withHeaders()` on laravel/ai 1.x, and a closure in `withProviderOptions()`.
+- **Clairic answer data.** `ExtractedValue::guess()`, `spans()`, `steps()`, `pBelow()` and `pAbove()`. `ExtractionResponse::$stateText`.
+- **`tests/Integration/LiveSystemOneTest.php`** asserts parsed Clef and Clairic answers against the live API, on both routes. It also tests third-party models when `WORKERS_AI_E2E_THIRD_PARTY_MODEL` is set.
+
+### Fixed
+
+- **Clef and Clairic did not work in 1.1.0. They do now.** Cloudflare's REST API wraps each reply in `{result, success, errors: []}`. 1.1.0 read `answers` from the top level, so every live Clef call returned no answers, and `$response['urgent']` threw `No answer was returned`. Every live Clairic call threw `Workers AI Error: [unknown] Unknown error`, because `ErrorEnvelope::isErrorPayload()` treated `errors: []` as an error. The 1.1.0 unit tests used an unwrapped fake, and the 1.1.0 live check looked at the status code only. `runPayload()` now reads both shapes.
+- **Clef reports bad replies.** A 200 with an error or with no `answers` throws `AiException`. Before, it returned an empty `ClassificationResponse`. Clairic now also throws on a reply with no `answers`. A 408 on Clef throws `GatewayTimeoutException`, as the docs said.
+- **Third-party and `@hf/` models on the direct API.** 1.1.0's post-release commit rejected any model that does not start with `@cf/`. Cloudflare's REST API serves `openai/gpt-5.5` on `/ai/v1`, and `@hf/` models are Workers AI models. `@hf/` IDs also gain the `workers-ai/` prefix on `/compat`.
+- **Clef and Clairic validate config as chat does.** `url` with `account_id` throws, and a pasted URL in `account_id` or `gateway` throws. Before, the run endpoint ignored `url` silently.
+- **`extract(timeout: 30)` overrides `timeout(45)`.** Before, the value 30 could not override an earlier call.
+
+### Changed
+
+- **`WorkersAiClassifyingProvider` is a normal class.** It replaces a class built with `eval()`. `ClefClassification::load()` and `CLASS_NAME` are gone.
+- **`composer.json`** names Clef and Clairic, for Packagist search.
+- **Docs.** A separate landing page, a new Overview, a Quickstart with a tab for each route, a Direct and gateway routes page, and separate Clef and Clairic guides. `/guides/decisions/` redirects to the Clef guide. `ai.default_for_classification` is now documented. Without it, `Str::decide()` calls TypeSafe.
+- **The third-party docs are corrected.** Cloudflare forwards `Authorization` to the provider on `/compat`, so a Cloudflare token in `key` returns 401. Measured 2026-11-05 with `openai/gpt-4.1-mini`. The same call on the direct API returned 200. Use the direct route for third-party models, or your own provider key on that provider's driver.
+- **Docs say where each value goes.** Values go in `.env`, and `config/ai.php` reads them.
+
+### Verified
+
+- laravel/ai v0.9.1: 242 passed, 88 skipped. v0.10.3: 245 passed, 85 skipped. v0.11.2: 245 passed, 85 skipped. v1.0.0: 270 passed, 60 skipped. v1.3.0: 273 passed, 57 skipped.
+- Live, 2026-11-05, on v0.11.2, v1.0.0 and v1.3.0, direct and through an AI Gateway: parsed Clef and Clairic answers, including all three Clef models, images, `Str::decide()`, forecasts and `return_state_text`. Clef tests skip on v0.11.2. The same Clef and Clairic tests fail on the 1.1.0 tag.
+- Live, 2026-11-05, on v1.3.0: `openai/gpt-4.1-mini` returned 200 on the direct API and 401 on `/compat` with a Cloudflare token.
+- Not verified: an authenticated gateway with only `key` on `api.cloudflare.com`. Cloudflare's docs say it works. The gateways tested have authentication off.
+
 ## [1.1.0] - 2026-11-05
+
+**Known issue: Clef and Clairic fail on every live call in this version. Use 1.2.0.** The "Verified" note below checked the status code, not the answers.
 
 ### Added
 
