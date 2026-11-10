@@ -7,7 +7,7 @@ sidebar:
 
 ## What the package retries
 
-The package retries a request when a second try can succeed. The default is 3 attempts in total, including the first. The same rules apply to chat, embeddings, Clef and Clairic.
+The package retries a request only when a second try has a real chance of working. By default it makes 3 attempts in total, counting the first. The same rules apply to chat, embeddings, Clef and Clairic.
 
 | Failure | Retried | Result after the last attempt |
 | --- | --- | --- |
@@ -21,9 +21,9 @@ The package retries a request when a second try can succeed. The default is 3 at
 | HTTP 200 with no text and no tool calls | Not applicable | `EmptyResponseException` |
 | HTTP 200 and finish reason `length` | Not applicable | `TruncatedResponseException`, only if `throw_on_truncation` is on |
 
-Backoff is 500 ms, 1 s, 2 s and so on, up to 20 s. If the response has a `Retry-After` header, the package waits that long, up to 20 s. It reads both seconds and HTTP-date values.
+Between attempts the package waits 500 ms, then 1 s, then 2 s and so on, up to 20 s. If the response has a `Retry-After` header, it waits that long instead, up to 20 s, and it reads both seconds and HTTP-date values.
 
-On `laravel/ai` 1.2.1 and later, Laravel AI has its own retry for a short `Retry-After`. The package turns that retry off, so a persistent 429 makes 3 attempts, not 6.
+On `laravel/ai` 1.2.1 and later, Laravel AI has its own retry for a short `Retry-After`. The package turns that one off, so a persistent 429 makes 3 attempts, not 6.
 
 ## Retry settings
 
@@ -42,21 +42,21 @@ A request that hits your client timeout has already run for the whole timeout, a
 
 ## HTTP 408
 
-A 408 from the gateway is not a client timeout. The request reached Cloudflare, and the generation ran longer than the gateway waits. Measured on 2026-09-09 on one account: `@cf/zai-org/glm-5.3-flash` with a 24,000 token cap returned 408 after 709 seconds.
+A 408 from the gateway isn't a client timeout. It means the request reached Cloudflare, but the generation ran longer than the gateway is willing to wait. For example, on 2026-09-09 on one account, `@cf/zai-org/glm-5.3-flash` with a 24,000 token cap returned 408 after 709 seconds.
 
-The package throws `GatewayTimeoutException` and does not retry, because a retry takes as long. It also throws this exception for a 408 from Clef or Clairic. To fix it, lower the token cap, lower `reasoning_effort`, split the work, or set a failover provider.
+The package throws `GatewayTimeoutException` and doesn't retry, because a retry would take as long. It throws the same exception for a 408 from Clef or Clairic. To fix it, lower the token cap, lower `reasoning_effort`, split the work, or set a failover provider.
 
 ## HTTP 429
 
-Laravel AI does not retry a 429. This package does, so one 429 in a wide fan-out does not lose a request.
+Laravel AI doesn't retry a 429, but this package does, so when you send many requests at once, one 429 doesn't lose a request.
 
-The package does not limit your concurrency. Limits depend on the account and the model. Limit the fan-out in your own code, for example with a queue rate limiter.
+The package doesn't limit how many requests you send at once, and Cloudflare's limits depend on the account and the model. Limit the fan-out in your own code, for example with a queue rate limiter.
 
 ## Failover
 
-These exceptions implement the Laravel AI `FailoverableException` marker: `GatewayTimeoutException`, `RateLimitedException`, `ProviderOverloadedException`, `InsufficientCreditsException` and the connection exceptions. If you set a fallback provider in Laravel AI, it takes over when one of them is thrown.
+Failover means Laravel AI hands a failed call to the next provider in your list. It does that only for exceptions that implement its `FailoverableException` marker. From this package, those are `GatewayTimeoutException`, `RateLimitedException`, `ProviderOverloadedException`, `InsufficientCreditsException` and the connection exceptions.
 
-These do not trigger failover: `EmptyResponseException` and `TruncatedResponseException`. Catch them in your code. Both extend `Laravel\Ai\Exceptions\AiException`.
+`EmptyResponseException` and `TruncatedResponseException` don't trigger failover, so catch them in your code. Both extend `Laravel\Ai\Exceptions\AiException`.
 
 ```php
 use Laravel\Ai\Exceptions\AiException;
@@ -73,7 +73,7 @@ try {
 
 ## Other HTTP errors
 
-The package maps only the statuses in the table above. Any other non-2xx status, such as 400, 401, 403, 404, 410 or 413, throws `Illuminate\Http\Client\RequestException`. A bad API token gives this error. The message looks like `HTTP request returned status code 401: {"code":10000,"message":"Authentication error"}`. These errors do not trigger failover. Read the status with `$e->response->status()` and the body with `$e->response->json()`.
+The package maps only the statuses in the table above. Any other non-2xx status, such as 400, 401, 403, 404, 410 or 413, throws `Illuminate\Http\Client\RequestException`, and these errors don't trigger failover. A bad API token is the usual cause of this error, with a message like `HTTP request returned status code 401: {"code":10000,"message":"Authentication error"}`. Read the status with `$e->response->status()` and the body with `$e->response->json()`.
 
 ```php
 use Illuminate\Http\Client\RequestException;
@@ -87,13 +87,13 @@ try {
 
 ## Error payloads in a 200 response
 
-Cloudflare uses two error shapes: `{"error": {...}}` and `{"errors": [...]}`. When an HTTP 200 response carries either one, the package throws `AiException` with a message in this form: `Workers AI Error: [type] message`.
+Cloudflare sometimes reports an error inside an HTTP 200 response, in one of two shapes: `{"error": {...}}` or `{"errors": [...]}`. When it does, the package throws `AiException` with a message in the form `Workers AI Error: [type] message`.
 
 If a chat response has no `choices`, the package throws `AiException` with `Workers AI Error: Response did not contain any choices.`
 
 ## Clef and Clairic errors
 
-Clef and Clairic call `POST /ai/run/{model}`. The package reads a reply wrapped in `{result, success, errors}` and an unwrapped reply.
+Clef and Clairic call `POST /ai/run/{model}`. The package reads the reply whether or not Cloudflare wraps it in `{result, success, errors}`.
 
 | Reply | Result |
 | --- | --- |
@@ -105,4 +105,4 @@ The other statuses follow the table at the top of this page. See [Clef](/system-
 
 ## Gateway retry
 
-If your AI Gateway also retries, the two layers multiply the attempts. Use one layer. To use the gateway retry, set `retry` to `false`.
+If your AI Gateway also retries, the two layers multiply the attempts. Use one layer: to keep the gateway's retry, set `retry` to `false`.

@@ -7,7 +7,7 @@ sidebar:
 
 ## Exceptions
 
-The package adds three exceptions in the namespace `Meirdick\WorkersAi\Exceptions`. All extend `Laravel\Ai\Exceptions\AiException`.
+The package adds three exceptions, in the namespace `Meirdick\WorkersAi\Exceptions`. All three extend `Laravel\Ai\Exceptions\AiException`. The Failover column says whether Laravel AI hands the call to your next provider when the exception is thrown.
 
 | Class | Thrown when | Failover | Fix |
 | --- | --- | --- | --- |
@@ -19,7 +19,7 @@ The package adds three exceptions in the namespace `Meirdick\WorkersAi\Exception
 
 ## Other exceptions you can see
 
-These come from Laravel AI, Laravel or PHP, not from the package's own classes:
+You can also see these exceptions. They're classes from Laravel AI, Laravel or PHP, not from the package:
 
 | Class | Cause |
 | --- | --- |

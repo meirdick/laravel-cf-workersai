@@ -6,16 +6,16 @@ sidebar:
   label: Clef
 ---
 
-Clef is Cloudflare's decision model. It reads an input, called the state, and answers typed questions with a probability for each allowed answer. It generates no text, so you have nothing to parse and no reasoning tokens to wait for.
+Clef is Cloudflare's decision model. It reads an input, which Cloudflare calls the state, and answers typed questions with a probability for each allowed answer. It generates no text, so you have nothing to parse and no reasoning tokens to wait for.
 
-Use Clef to route a ticket, flag content or pick a next step. Use [Clairic](/system-one/clairic/) when you cannot list the answers in advance, such as an invoice total. Use [`agent()`](/guides/text-generation/) when you need written text.
+Use Clef to route a ticket, flag content or pick a next step. If you can't list the answers in advance, such as an invoice total, use [Clairic](/system-one/clairic/) instead. If you need written text, use [`agent()`](/guides/text-generation/).
 
-Clef follows the same API as Jev, the decision model from TypeSafe that Laravel AI uses by default. So the Laravel AI classification API works unchanged. If your code uses Jev, set `provider: 'workers-ai'` and keep the rest.
+Clef follows the same API as Jev, the decision model from TypeSafe that Laravel AI uses by default. That's why the Laravel AI classification API works with it unchanged. If your code already uses Jev, set `provider: 'workers-ai'` and keep the rest.
 
 ## Requirements
 
-- `laravel/ai` 1.0 or later. Earlier versions have no classification API.
-- No extra config. The `workers-ai` provider entry works on the [direct route and the gateway route](/concepts/routes/).
+- `laravel/ai` 1.0 or later, because earlier versions have no classification API.
+- No extra config. Your `workers-ai` provider entry works on both the [direct route and the gateway route](/concepts/routes/).
 
 ## Ask questions
 
@@ -39,9 +39,9 @@ $response = Classification::of('Checkout has been failing for every customer for
     ->classify(provider: 'workers-ai');
 ```
 
-A request can hold 1 to 64 questions. The state can be a string or an array, such as a record or a chat log.
+One request can hold 1 to 64 questions. The state can be a string or an array, such as a record or a chat log.
 
-To omit `provider:`, set `default_for_classification` to `workers-ai` in `config/ai.php`. Laravel AI's default is `typesafe`.
+To leave out `provider:`, set `default_for_classification` to `workers-ai` in `config/ai.php`. Laravel AI's default is `typesafe`.
 
 ## Read the answers
 
@@ -61,11 +61,11 @@ $response['severity']->level();         // nearest level, as an integer
 $response['severity']->label();         // that level's text
 ```
 
-Use the probability to decide what to automate. For example, act when `isTrue(0.9)` is true and send the rest to a person.
+The probability tells you what's safe to automate. For example, act when `isTrue(0.9)` is true and send the rest to a person.
 
 ## Use the shortcuts
 
-Laravel AI's decision helpers also work. They use `default_for_classification`, or the `provider:` you pass.
+Laravel AI's one-line decision helpers work too. They use the `provider:` you pass, or `default_for_classification` if you pass none.
 
 ```php
 use Illuminate\Support\Str;
@@ -90,11 +90,11 @@ collect(['billing' => 'Invoices', 'technical' => 'Outages'])
 ->classify(provider: 'workers-ai', model: '@cf/cloudflare/clef-flash');
 ```
 
-Set your default in `models.classification.default`. A model that is not Clef throws before a request.
+Set your default in `models.classification.default`. If you name a model that isn't Clef, the package throws before it sends the request.
 
 ## Send images
 
-Send up to 4 JPEG, PNG or WebP images. This needs `laravel/ai` 1.2 or later. A fifth image throws before a request.
+You can send up to 4 JPEG, PNG or WebP images with the state. This needs `laravel/ai` 1.2 or later, and a fifth image throws before the request is sent.
 
 ```php
 use Laravel\Ai\Files\Image;
@@ -105,11 +105,11 @@ Classification::of('A product photo from a customer.', [
     ->classify(provider: 'workers-ai');
 ```
 
-Cloudflare allows 4 MiB per image and 8 MiB in total. It does not accept remote image URLs.
+Cloudflare allows 4 MiB per image and 8 MiB in total, and it doesn't accept remote image URLs.
 
 ## Send audio or video
 
-Only `clef-omni` reads these. The package has no attachment type for them. Pass base64 data URLs as provider options:
+Only `clef-omni` reads audio and video. The package has no attachment type for them, so pass them as base64 data URLs in the provider options:
 
 ```php
 Classification::of('A recording of the unit running.')
@@ -120,7 +120,7 @@ Classification::of('A recording of the unit running.')
 
 ## Fail over
 
-Give a list of providers. Laravel AI tries the next one on a failure that can pass on another provider, such as HTTP 429 or 503.
+Pass a list of providers. Laravel AI tries the next provider when a call fails in a way a different provider could avoid, such as HTTP 429 or 503.
 
 ```php
 ->classify(provider: ['workers-ai', 'typesafe']);
@@ -128,7 +128,7 @@ Give a list of providers. Laravel AI tries the next one on a failure that can pa
 
 ## Test your code
 
-`Classification::fake()` replaces the gateway, and no request is sent.
+`Classification::fake()` swaps out the class that sends the request, so no request reaches Cloudflare.
 
 ```php
 use Laravel\Ai\Responses\Data\BooleanAnswer;
@@ -151,8 +151,8 @@ Laravel AI also dispatches its `Classifying`, `Classified` and `ClassificationFa
 | HTTP 200 with an error in the body, or no answers | `AiException` |
 | Any other non-2xx status | `Illuminate\Http\Client\RequestException` |
 
-A `url` that ends in `/compat` throws `InvalidArgumentException`, because that path does not serve Clef. See [Direct and gateway routes](/concepts/routes/).
+A `url` that ends in `/compat` throws `InvalidArgumentException`, because that path doesn't serve Clef. See [Direct and gateway routes](/concepts/routes/).
 
 ## Cost
 
-Cloudflare charges for input tokens only. Read the count with `$response->usage->inputTokens`. `WorkersAiUsageReported` reports the neuron figure. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Cloudflare charges for input tokens only. Read the count with `$response->usage->inputTokens`. The `WorkersAiUsageReported` event also reports the neuron figure. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

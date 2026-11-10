@@ -7,7 +7,7 @@ sidebar:
 
 ## Prompt an agent
 
-Use the `agent()` helper for a one-off call:
+For a one-off call, use the `agent()` helper:
 
 ```php
 use function Laravel\Ai\agent;
@@ -18,7 +18,7 @@ $response = agent('You are a helpful assistant.')
 echo $response->text;
 ```
 
-For an agent class, implement `Laravel\Ai\Contracts\Agent` and use the `Promptable` trait. Add `#[Provider('workers-ai')]` so the agent always uses this package.
+For an agent class, implement `Laravel\Ai\Contracts\Agent` and use the `Promptable` trait. Add `#[Provider('workers-ai')]` so the agent always runs on Workers AI.
 
 ```php
 use Laravel\Ai\Attributes\Provider;
@@ -49,11 +49,11 @@ The package uses these models when you name none:
 | `#[UseCheapestModel]` | `@cf/meta/llama-3.2-3b-instruct` | `models.text.cheapest` |
 | `#[UseSmartestModel]` | `@cf/moonshotai/kimi-k2.6` | `models.text.smartest` |
 
-Name a model for one call with `model:`. Name one for an agent with `#[Model('@cf/...')]`. Change the defaults in config. See [Models](/guides/models/).
+To pick a model for one call, pass `model:`. For a whole agent, add `#[Model('@cf/...')]`. To change the defaults, use the config keys above. See [Models](/guides/models/).
 
 ## Set the token cap
 
-Cloudflare stops a completion at 256 tokens when the request has no cap. That cuts most structured output in the middle of the JSON. So the package sends `max_completion_tokens: 4096` by default.
+When a request has no token cap, Cloudflare stops the completion at 256 tokens, which cuts most structured output off in the middle of the JSON. So the package sends `max_completion_tokens: 4096` by default.
 
 Change the default for all agents with `default_max_tokens`:
 
@@ -64,7 +64,7 @@ Change the default for all agents with `default_max_tokens`:
 ],
 ```
 
-Set it to `null` to send no cap. Avoid this. Measured on 2026-09-09 on one account: `@cf/zai-org/glm-5.3-flash` ran to 8,190 tokens in 369 seconds with no cap.
+You can set it to `null` to send no cap, but avoid that. On 2026-09-09 on one account, `@cf/zai-org/glm-5.3-flash` with no cap ran to 8,190 tokens in 369 seconds.
 
 Set a cap for one agent with `#[MaxTokens]`:
 
@@ -75,11 +75,11 @@ use Laravel\Ai\Attributes\MaxTokens;
 class ShortAnswerAgent implements Agent { /* ... */ }
 ```
 
-Precedence, highest first: the per-call or per-agent value, then `default_max_tokens`, then the Cloudflare default.
+A per-call or per-agent value wins over `default_max_tokens`, which wins over the Cloudflare default.
 
 ## Set the timeout
 
-Laravel AI uses a 60-second timeout. Large models, structured output and reasoning models can need more. Raise the timeout:
+Laravel AI uses a 60-second timeout, and large models, structured output and reasoning models can need more. To raise it:
 
 ```php
 use Laravel\Ai\Attributes\Timeout;
@@ -92,15 +92,15 @@ $agent = new ExtractionAgent;
 $agent->prompt('...', provider: 'workers-ai', timeout: 120);
 ```
 
-The package does not retry a request that times out. It fails at once, because a retry would run as long again. See [Errors and retries](/guides/errors-and-retries/).
+The package doesn't retry a request that times out. It fails at once, because a retry would run as long again. See [Errors and retries](/guides/errors-and-retries/).
 
 ## Temperature and top-p
 
-The package sends `temperature` and `top_p` when Laravel AI sets them. Set them with `#[Temperature]` and `#[TopP]` on the agent.
+The package sends `temperature` and `top_p` when Laravel AI sets them, which you do with `#[Temperature]` and `#[TopP]` on the agent.
 
 ## Send extra request fields
 
-To add fields to the request body, implement `Laravel\Ai\Contracts\HasProviderOptions` on the agent. The package merges the array into the body.
+To add fields to the request body, implement `Laravel\Ai\Contracts\HasProviderOptions` on the agent. The package merges the array you return into the body.
 
 ```php
 use Laravel\Ai\Contracts\HasProviderOptions;
@@ -124,8 +124,8 @@ class MyAgent implements Agent, HasProviderOptions
 }
 ```
 
-`$provider` is a string for this package, not a `Lab` case. The package does not check the fields. Read the model page in the Cloudflare catalog to see which fields it accepts.
+For this package, `$provider` is a string, not a `Lab` case. The package doesn't check the fields, so read the model's page in the Cloudflare catalog to see which ones it accepts.
 
 <Aside type="note">
-  Keys from `providerOptions()` replace keys the package builds, such as `reasoning_effort`. The package removes `session_affinity` from the body. Set it in config instead.
+  Keys from `providerOptions()` replace keys the package builds, such as `reasoning_effort`. The one exception is `session_affinity`, which the package removes from the body; set it in config instead.
 </Aside>

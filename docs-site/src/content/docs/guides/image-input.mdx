@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-Attach images to a prompt. The package sends each image as an `image_url` content part. Choose a Workers AI model that accepts images.
+Attach images to a prompt as you would with any Laravel AI provider, and pick a model that accepts images. The package sends each image as an `image_url` content part, the OpenAI-style format Workers AI expects.
 
 ```php
 use Laravel\Ai\Files\Image;
@@ -29,9 +29,9 @@ $response = agent('Describe images.')->prompt(
 | Raw `UploadedFile` | Passed as is | Base64 data URL, MIME checked |
 | Uploaded file | `Image::fromUpload()` | Base64 data URL (it becomes a `Base64Image`) |
 
-The package checks the MIME type only when you pass a raw `Illuminate\Http\UploadedFile`, such as `$request->file('photo')`. It allows `image/jpeg`, `image/png`, `image/gif` and `image/webp`. For other types (SVG, AVIF, HEIC), it throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
+The package checks the MIME type only when you pass a raw `Illuminate\Http\UploadedFile`, such as `$request->file('photo')`. It accepts `image/jpeg`, `image/png`, `image/gif` and `image/webp`. For other types (SVG, AVIF, HEIC), it throws `InvalidArgumentException` with the message `Workers AI does not support document attachments. Only image attachments are supported.`
 
-`Image::fromUpload()` returns a `Base64Image`, and the package does not check a `Base64Image`, `LocalImage`, `StoredImage` or `RemoteImage`. Cloudflare accepts or rejects those files. Send only the four types above.
+`Image::fromUpload()` returns a `Base64Image`, and the package doesn't check a `Base64Image`, `LocalImage`, `StoredImage` or `RemoteImage`. Cloudflare decides whether to accept those, so send only the four types above.
 
 ## Not supported
 
@@ -40,9 +40,9 @@ The package checks the MIME type only when you pass a raw `Illuminate\Http\Uploa
 - Image generation.
 
 <Aside type="note">
-  The package does not check that the model accepts images. Pick a vision model from the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/) and copy its `@cf/...` name into `model:`.
+  The package doesn't check that the model accepts images. Pick a vision model from the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/) and copy its `@cf/...` name into `model:`.
 </Aside>
 
 ## Images for Clef and Clairic
 
-Clef and Clairic take images in a different request format. They accept up to 4 inline images, in JPEG, PNG or WebP. They reject remote URLs. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).
+Clef and Clairic take images in a different request format. They accept up to 4 inline images in JPEG, PNG or WebP, and they reject remote URLs. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).

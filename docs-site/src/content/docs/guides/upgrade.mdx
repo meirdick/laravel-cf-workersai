@@ -5,14 +5,16 @@ sidebar:
   order: 13
 ---
 
-Version 1.0.0 is the first stable release. It supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase.
+Find the section for the version you're on now.
+
+Version 1.0.0 was the first stable release, and it supports `laravel/ai` `^0.9 || ^0.10 || ^0.11 || ^1.0` in one codebase.
 
 ## From 1.2 to 1.3
 
-Run `composer update meirdick/laravel-cf-workersai`. You do not change your config. Check these points:
+Run `composer update meirdick/laravel-cf-workersai`. Your config doesn't change, but check these points:
 
-- `WorkersAiUsageReported` now also fires for Clef, Clairic and the new run API calls. If a listener adds up spend, it now counts them too.
-- The error for a document or audio attachment has new text. The exception class is the same.
+- `WorkersAiUsageReported` now also fires for Clef, Clairic and the new run API calls. If a listener adds up spend, it now counts those calls too.
+- The error message for a document or audio attachment has changed. The exception class is the same.
 
 ## From 1.0 or 1.1 to 1.2
 
@@ -22,10 +24,10 @@ Run:
 composer update meirdick/laravel-cf-workersai
 ```
 
-You do not change your config. Check these points:
+Your config doesn't change, but check these points:
 
-- Clef and Clairic work now. In 1.1.0, every live call failed, because the package could not read Cloudflare's reply. Remove any workaround you added.
-- A 200 reply with an error, or with no `answers`, throws `AiException`. A 408 throws `GatewayTimeoutException`. Check any code that catches errors from these calls.
+- Clef and Clairic work now. In 1.1.0, every live call failed, because the package couldn't read Cloudflare's reply. Remove any workaround you added.
+- A 200 reply with an error, or with no `answers`, now throws `AiException`, and a 408 throws `GatewayTimeoutException`. Check any code that catches errors from these calls.
 - The package no longer rejects a third-party model such as `openai/gpt-5.5` on the direct API. It still rejects a `workers-ai/`-prefixed name there. See [Models](/guides/models/).
 - New in 1.2: `Extraction::fake()`, the `Extracting`, `Extracted` and `ExtractionFailed` events, and `Meirdick\WorkersAi\Prompts\ExtractionPrompt`. See [Testing](/guides/testing/).
 
@@ -37,11 +39,11 @@ Run:
 composer require "meirdick/laravel-cf-workersai:^1.0" -W
 ```
 
-You do not change your config. Check these two things.
+Your config doesn't change, but check these two things.
 
 ### Cached token counts
 
-If you read token counts from the usage object, check your code.
+If you read token counts from the usage object, check your code:
 
 - On `laravel/ai` 0.9 to 0.11, `Usage::$promptTokens` now excludes cached tokens.
 - On `laravel/ai` 1.x, `TextUsage::$inputTokens` includes cached tokens. `cacheReadInputTokens` is the cached part.
@@ -50,11 +52,11 @@ If you read token counts from the usage object, check your code.
 
 ### Headers
 
-The package now sends the `headers` key from the provider config. On `laravel/ai` 1.x it also sends headers set with `Provider::withHeaders()`. Before 1.0.0 the package dropped them. Check that your configured headers are headers you want to send. See [AI Gateway](/guides/ai-gateway/).
+The package now sends the `headers` key from the provider config, and on `laravel/ai` 1.x it also sends headers set with `Provider::withHeaders()`. Before 1.0.0 it dropped them, so check that every configured header is one you actually want sent. See [AI Gateway](/guides/ai-gateway/).
 
 ## From 0.6.x or earlier
 
-If you use `account_id` with `gateway`, requests moved to the `/compat` path in 0.7.0. Also, `throw_on_empty_response` is now on by default, and `#[UseCheapestModel]` points to a new model. See [Routes](/concepts/routes/) and [Configuration](/reference/configuration/).
+If you use `account_id` with `gateway`, requests moved to the `/compat` path in 0.7.0. Also, `throw_on_empty_response` is now on by default, and `#[UseCheapestModel]` points to a different model. See [Routes](/concepts/routes/) and [Configuration](/reference/configuration/).
 
 ## From 0.5.x or earlier
 
@@ -64,4 +66,4 @@ Update `laravel/ai` in the same command:
 composer require "laravel/ai:^1.0" "meirdick/laravel-cf-workersai:^1.0" -W
 ```
 
-Two errors can appear after this upgrade. See [Troubleshooting](/troubleshooting/). The `laravel/ai` database schema changed between 0.9 and 0.11. Your own `php` constraint in `composer.json` must be `^8.3`.
+Two errors can appear after this upgrade, both covered in [Troubleshooting](/troubleshooting/). The `laravel/ai` database schema changed between 0.9 and 0.11, and your own `php` constraint in `composer.json` must be `^8.3`.

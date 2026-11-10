@@ -5,13 +5,13 @@ sidebar:
   order: 7
 ---
 
-Many Workers AI models write reasoning text before the answer. Reasoning uses tokens, time and neurons. Use `reasoning_effort` to limit it.
+Many Workers AI models write reasoning text before the answer, and that reasoning costs tokens, time and neurons. Use `reasoning_effort` to limit it.
 
 ## Set reasoning_effort
 
-Cloudflare accepts the OpenAI `reasoning_effort` field on `/compat`. Laravel AI does not send it. The package does.
+Cloudflare accepts the OpenAI `reasoning_effort` field on `/compat`. Laravel AI doesn't send it, so the package does.
 
-If you do not set it, the model chooses its own effort. Measured on 2026-09-09 on one account, with `@cf/openai/gpt-oss-120b` and one two-sentence question:
+If you don't set it, the model picks its own effort. Here's the difference it makes, measured on 2026-09-09 on one account with `@cf/openai/gpt-oss-120b` and one two-sentence question:
 
 | `reasoning_effort` | Reasoning | Answer | Wall time | Neurons |
 | --- | --- | --- | --- | --- |
@@ -19,9 +19,9 @@ If you do not set it, the model chooses its own effort. Measured on 2026-09-09 o
 | unset | 104 chars | 433 chars | 2.6 s | 11.3 |
 | `high` | 1,564 chars | 296 chars | 7.4 s | 31.4 |
 
-The `low` answer was not worse. These figures show the order of magnitude, not a guarantee. `low` is a good default for latency-sensitive work.
+The `low` answer wasn't worse. These figures show the order of magnitude, not a guarantee, but `low` is a good default when speed matters.
 
-Valid values are `low`, `medium` and `high`. Cloudflare returns HTTP 400 for OpenAI `none` and `minimal`. The package rejects them before the request, with an `InvalidArgumentException`.
+Valid values are `low`, `medium` and `high`. Cloudflare returns HTTP 400 for OpenAI's `none` and `minimal`, so the package rejects them with an `InvalidArgumentException` before it sends the request.
 
 ### Set it for all agents
 
@@ -43,7 +43,7 @@ class DraftingAgent implements Agent { /* ... */ }
 
 ### Order of precedence
 
-From lowest to highest:
+If you set it in more than one place, the later item in this list wins:
 
 1. `reasoning_effort` in the provider config.
 2. `#[ReasoningEffort]` on the agent.
@@ -61,7 +61,7 @@ Test your own model before you rely on these results.
 
 ## The thinking flag
 
-`chat_template_kwargs.thinking` is an older control that depends on the model. It works on the Kimi chat template and on models that share it. It had no effect on `@cf/zai-org/glm-5.3-flash`. Try `reasoning_effort` first.
+`chat_template_kwargs.thinking` is an older, model-specific switch. It works on the Kimi chat template and on models that share it, but it had no effect on `@cf/zai-org/glm-5.3-flash`. Try `reasoning_effort` first.
 
 To use it, return it from `providerOptions()`:
 
@@ -77,13 +77,13 @@ public function providerOptions(Lab|string $provider): array
 }
 ```
 
-When `thinking` is `true` and the token cap is below 2048, the package raises the cap to 2048 and writes a warning to the log. Reasoning and the answer share one cap, and a small cap leaves no room for the answer.
+When `thinking` is `true` and the token cap is below 2048, the package raises the cap to 2048 and writes a warning to the log. Reasoning and the answer share one cap, so a small cap can leave no room for the answer.
 
 ## Empty answers
 
-A reasoning model can use its whole token cap on thinking. Cloudflare then returns HTTP 200 with `content: null`, and Laravel AI shows an empty string. Your code cannot tell this from a real empty answer.
+A reasoning model can spend its whole token cap on thinking. Cloudflare then returns HTTP 200 with `content: null`, and Laravel AI gives you an empty string, which your code can't tell apart from a real empty answer.
 
-So the package throws `EmptyResponseException`. This is on by default. A tool-call turn with no text does not throw.
+So by default the package throws `EmptyResponseException` instead. A tool-call turn with no text doesn't throw.
 
 To receive the empty response instead:
 
@@ -98,7 +98,7 @@ When you see this exception, raise the token cap or lower `reasoning_effort`.
 
 ## Cut-off answers
 
-Cloudflare reports a cut-off answer with `finish_reason: "length"`. Laravel AI returns the partial text as a success. To get an exception instead, turn on `throw_on_truncation`:
+Cloudflare marks an answer that hit the token cap with `finish_reason: "length"`, and Laravel AI returns the partial text as if it succeeded. To get an exception instead, turn on `throw_on_truncation`:
 
 ```php
 'workers-ai' => [
@@ -107,7 +107,7 @@ Cloudflare reports a cut-off answer with `finish_reason: "length"`. Laravel AI r
 ],
 ```
 
-The package then throws `TruncatedResponseException` on any step that ends with finish reason `length`. Use this for extraction and drafting, where a partial answer is worse than none.
+The package then throws `TruncatedResponseException` on any step that ends with finish reason `length`. It's worth turning on for extraction and drafting, where a partial answer is worse than none.
 
 ## Where reasoning text appears
 
@@ -119,4 +119,4 @@ The package then throws `TruncatedResponseException` on any step that ends with 
 | `@cf/meta/llama-3.3-70b-instruct-fp8-fast` | `reasoning`, always `null` |
 | `@cf/qwen/qwq-32b` | None. Reasoning is inside `content`. |
 
-The package reads all of these keys. On `laravel/ai` 1.x, it also fills `StepResponse::$reasoning`. On both `laravel/ai` lines, it sends reasoning text back between tool-call turns. You do not handle this.
+The package reads all of these keys, so you don't have to. On `laravel/ai` 1.x, it also fills `StepResponse::$reasoning`. On every supported `laravel/ai` version, it sends the reasoning text back to the model between tool-call turns.

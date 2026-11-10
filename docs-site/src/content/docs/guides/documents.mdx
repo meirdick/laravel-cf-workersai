@@ -5,9 +5,9 @@ sidebar:
   order: 6.3
 ---
 
-Workers AI chat models do not read document files. Cloudflare's `/ai/tomarkdown` API converts them to text first. The package uses it in two ways: you call it yourself, or it runs for each document attachment.
+Workers AI chat models don't read document files, so the file has to become text first. Cloudflare's `/ai/tomarkdown` API does that conversion, and the package uses it in two ways: it can run for each document you attach to a prompt, or you can call it yourself.
 
-Cloudflare's list includes PDF, DOCX, XLSX, ODT, ODS, CSV and HTML. See [Markdown conversion](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/) for the full list. Cloudflare says most conversions are free. Images can use paid models.
+Cloudflare's list of formats includes PDF, DOCX, XLSX, ODT, ODS, CSV and HTML; see [Markdown conversion](https://developers.cloudflare.com/workers-ai/features/markdown-conversion/) for all of them. Cloudflare says most conversions are free, but images can use paid models.
 
 ## Attach a document to a prompt
 
@@ -20,7 +20,7 @@ Set `convert_documents` on the provider entry in `config/ai.php`:
 ],
 ```
 
-Then attach a document as on any other Laravel AI provider:
+Then attach a document as you would with any other Laravel AI provider:
 
 ```php
 use Laravel\Ai\Files\Document;
@@ -34,15 +34,15 @@ $response = agent('You answer questions about invoices.')->prompt(
 );
 ```
 
-The package converts the file, then adds the text to your message. It works with every chat model, because the model only sees text. Image attachments in the same message stay images.
+The package converts the file and adds the text to your message. This works with every chat model, because the model only sees text. Image attachments in the same message stay images.
 
-This setting is off by default, because it adds a request you did not write. With it off, a document attachment throws `InvalidArgumentException`.
+The setting is off by default, because it makes an extra request you didn't write. With it off, a document attachment throws `InvalidArgumentException`.
 
-The text counts toward your token cap and your cost. A long document can need a higher `#[MaxTokens]` and a model with a larger context window.
+The converted text counts toward your token cap and your cost, so a long document can need a higher `#[MaxTokens]` and a model with a larger context window.
 
 ## Convert a document yourself
 
-Use `Markdown::of()` when you want the text, such as for a [Clef](/system-one/clef/) or [Clairic](/system-one/clairic/) state. It does not need `convert_documents`.
+Use `Markdown::of()` when you want the text itself, for example as the input to [Clef](/system-one/clef/) or [Clairic](/system-one/clairic/). It doesn't need `convert_documents`.
 
 ```php
 use Laravel\Ai\Files\Document;
@@ -57,18 +57,18 @@ $invoice = Extraction::of($text)
     ->extract();
 ```
 
-`Markdown::of()` also takes an uploaded file. To use another provider entry, or a longer timeout than 60 seconds, pass them to `convert()`:
+`Markdown::of()` also takes an uploaded file. To use another provider entry, or a timeout longer than the default 60 seconds, pass them to `convert()`:
 
 ```php
 Markdown::of($request->file('report'))->convert(provider: 'workers-ai-backup', timeout: 120);
 ```
 
-The output starts with a heading and a metadata list, followed by the contents. Cloudflare sets this format.
+Cloudflare sets the output format: a heading and a metadata list, followed by the contents.
 
 ## Requirements
 
-- `account_id`, or a `url` that ends in `/ai/v1`. A `url` that ends in `/compat` throws. With `account_id`, calls go to `api.cloudflare.com` even when `gateway` is set, because the package does not route this API through a gateway.
-- A document with a known type. A file with no MIME type and no file extension throws before a request.
+- `account_id`, or a `url` that ends in `/ai/v1`. A `url` that ends in `/compat` throws. With `account_id`, calls go to `api.cloudflare.com` even when `gateway` is set, because the package doesn't route this API through a gateway.
+- A document with a known type. A file with no MIME type and no file extension throws before the request is sent.
 
 ## Errors
 
@@ -80,7 +80,7 @@ The output starts with a heading and a metadata list, followed by the contents. 
 
 ## Test your code
 
-`Markdown` has no fake of its own. Fake the HTTP call:
+`Markdown` has no fake of its own, so fake the HTTP call:
 
 ```php
 use Illuminate\Support\Facades\Http;

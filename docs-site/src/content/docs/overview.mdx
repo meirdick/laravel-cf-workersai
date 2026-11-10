@@ -3,7 +3,7 @@ title: Overview
 description: What the package does, what it adds to Laravel AI, and where to start.
 ---
 
-`meirdick/laravel-cf-workersai` is a [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) provider for the [Laravel AI SDK](https://laravel.com/docs/ai-sdk): text, embeddings, reranking, images, speech, transcription, Clef decisions and Clairic typed extraction, with AI Gateway routing. Install it, add a `workers-ai` entry to `config/ai.php`, and Laravel AI calls run on the models Cloudflare hosts.
+`meirdick/laravel-cf-workersai` is a [Cloudflare Workers AI](https://developers.cloudflare.com/workers-ai/) provider for the [Laravel AI SDK](https://laravel.com/docs/ai-sdk). Install it, add a `workers-ai` entry to `config/ai.php`, and your Laravel AI calls run on the models Cloudflare hosts: text, embeddings, reranking, images, speech, transcription, Clef decisions and Clairic typed extraction. You can call Cloudflare directly or route through AI Gateway.
 
 ## What you can do
 
@@ -20,23 +20,23 @@ description: What the package does, what it adds to Laravel AI, and where to sta
 | Read PDF, Word and Excel files | `Markdown::of()`, `convert_documents` | Cloudflare's `/ai/tomarkdown` |
 | Search the web from a tool call | `CloudflareWebSearch` | Cloudflare's Web Search API |
 
-Clef uses the Laravel AI classification API. Clairic has no Laravel AI API, so the package adds `Extraction`. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).
+Clef works through Laravel AI's own classification API. Laravel AI has no API for Clairic, so the package adds one, `Extraction`. See [Clef](/system-one/clef/) and [Clairic](/system-one/clairic/).
 
 ## What the package adds
 
-Laravel AI's `openai-compatible` driver can call a Cloudflare URL. It is enough if you generate text with one model and every agent has `#[MaxTokens]`. This package also does these things:
+Laravel AI's `openai-compatible` driver can call a Cloudflare URL. That's enough if you only generate text with one model and every agent sets `#[MaxTokens]`. This package also:
 
 - Sends a 4096 token cap by default. With no cap, Cloudflare stops most models at 256 tokens.
-- Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text.
-- Sends `reasoning_effort`, which Laravel AI does not have.
-- Reports the neurons Cloudflare meters on every model call, with the `WorkersAiUsageReported` event.
-- Retries HTTP 429 and Cloudflare edge errors, and maps them for Laravel AI failover.
+- Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text, so a silent failure doesn't look like an empty answer.
+- Sends `reasoning_effort`, which Laravel AI doesn't have.
+- Reports the neurons (Cloudflare's billing unit) on every model call, with the `WorkersAiUsageReported` event.
+- Retries HTTP 429 and Cloudflare edge errors, and maps them so Laravel AI failover works.
 - Sends the second token that an authenticated AI Gateway needs.
-- Calls Clef, Clairic, images, speech, transcription and reranking, which the `openai-compatible` driver cannot reach on Cloudflare.
+- Calls Clef, Clairic, images, speech, transcription and reranking, which the `openai-compatible` driver can't reach on Cloudflare.
 
 ## How it reaches Cloudflare
 
-Calls go directly to Workers AI, or through [AI Gateway](https://developers.cloudflare.com/ai-gateway/) for logs, caching and rate limits. Both use the same calling code, and only the config differs. See [Direct and gateway routes](/concepts/routes/).
+Calls go directly to Workers AI, or through [AI Gateway](https://developers.cloudflare.com/ai-gateway/) if you want logs, caching and rate limits. Your calling code is the same either way; only the config differs. See [Direct and gateway routes](/concepts/routes/).
 
 ## Requirements
 

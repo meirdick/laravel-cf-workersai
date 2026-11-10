@@ -7,17 +7,17 @@ sidebar:
 
 ## The three parts
 
-**Workers AI** is the Cloudflare service that hosts models. You call it over HTTP. Cloudflare meters most models in neurons. It prices Clef and Clairic per input token.
+**Workers AI** is the Cloudflare service that hosts the models, and you call it over HTTP. Cloudflare bills most models in neurons, its own usage unit, but it prices Clef and Clairic per input token.
 
-**AI Gateway** is an optional Cloudflare proxy between your app and the model. It adds request logs, cost analytics, caching and rate limits. You set it up in the Cloudflare dashboard. The package only sends requests to it.
+**AI Gateway** is an optional Cloudflare proxy that sits between your app and the model. It adds request logs, cost analytics, caching and rate limits. You set it up in the Cloudflare dashboard; the package only sends requests to it.
 
 **Laravel AI** (`laravel/ai`) is the Laravel package that gives you `agent()`, `Embeddings`, `Classification`, tools and streaming. It sends each request through a provider.
 
-This package is a Cloudflare Workers AI provider for Laravel AI. It turns Laravel AI calls into Workers AI requests.
+This package is that provider for Cloudflare Workers AI. It turns each Laravel AI call into a Workers AI request and turns the reply back into a Laravel AI response.
 
 ## How it plugs into Laravel AI
 
-The package registers one driver in the Laravel AI manager. The driver name is `workers-ai`, and `workersai` is an alias.
+The package registers one driver with Laravel AI, named `workers-ai` (with `workersai` as an alias). Each kind of call is handled by its own class, which Laravel AI calls a gateway. That's a different thing from AI Gateway.
 
 | Call | Handled by | Cloudflare API |
 | --- | --- | --- |
@@ -28,34 +28,38 @@ The package registers one driver in the Laravel AI manager. The driver name is `
 | `Markdown::of()`, `convert_documents` | `WorkersAiMarkdownGateway` | `/ai/tomarkdown` |
 | `CloudflareWebSearch` | The tool itself | `/ai/websearch` |
 
-The text gateway runs one model turn per call. Laravel AI runs the tool loop, so tool calls, message history and step limits work as on any other provider.
+The text gateway runs one model turn per call. Laravel AI runs the tool loop itself, so tool calls, message history and step limits work as they do on any other provider.
 
-Laravel AI features work on this provider, including `#[MaxTokens]`, `#[Timeout]`, `#[Provider]`, `Ai::fakeAgent()`, `Classification::fake()` and failover. Clairic is not part of Laravel AI, so `Extraction` has its own `fake()`, events and failover with the same shape.
+Laravel AI features work here too, including `#[MaxTokens]`, `#[Timeout]`, `#[Provider]`, `Ai::fakeAgent()`, `Classification::fake()` and failover. Clairic isn't part of Laravel AI, so `Extraction` brings its own `fake()`, events and failover, built the same way.
 
 ## How the package picks a URL
 
-It reads your config in this order:
+It checks your config in this order and uses the first match:
 
-1. `url` is set. Text and embeddings go to that URL.
-2. `account_id` and `gateway` are set. Text and embeddings go to the gateway's `/compat` path.
-3. `account_id` is set. Text and embeddings go to the direct API.
+1. If `url` is set, text and embeddings go to that URL.
+2. If `account_id` and `gateway` are set, they go to the gateway's `/compat` path.
+3. If only `account_id` is set, they go to the direct API.
 
 [Direct and gateway routes](/concepts/routes/) has the full table, with the URLs for Clef and Clairic.
 
 ## What the package does for text calls
 
+On a text call, the package:
+
 - Sends a 4096 token cap when the call sets none. With no cap, Cloudflare stops most models at 256 tokens.
 - Throws `EmptyResponseException` when a reasoning model returns HTTP 200 with no text.
-- Sends `reasoning_effort`, which Laravel AI does not have.
+- Sends `reasoning_effort`, which Laravel AI doesn't have.
 - Dispatches `WorkersAiUsageReported` with the neuron figure.
 - Retries HTTP 429, 502, 503, 504, 520, 522 and 524.
-- Reads reasoning text from each key that models use.
+- Reads the reasoning text, whichever response key the model puts it in.
 
 ## What the package does for run API calls
 
-- Sends the model ID in the URL, and the request shape each model needs. Clef and Clairic take a short selector in the body. Some image models take multipart.
-- Reads binary image and audio replies, and returns them as Laravel AI responses.
-- Reads a reply with or without Cloudflare's `result` envelope.
+Clef, Clairic, reranking, images, speech and transcription use Cloudflare's run API, `/ai/run/{model}`, instead of the OpenAI-compatible one. On those calls, the package:
+
+- Puts the model ID in the URL and builds the request body each model expects. Clef and Clairic take a short model selector in the body, and some image models take a multipart form.
+- Reads binary image and audio replies and returns them as Laravel AI responses.
+- Reads a reply whether or not Cloudflare wraps it in its `result` envelope.
 - Throws `AiException` when a 200 reply has an error or no output.
 - Dispatches `WorkersAiUsageReported` with the neuron figure.
 - Applies the same retries, `headers` and failover rules as text calls.

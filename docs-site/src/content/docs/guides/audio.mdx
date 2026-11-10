@@ -5,7 +5,7 @@ sidebar:
   order: 6.2
 ---
 
-The package adds Workers AI to Laravel AI's `Audio` and `Transcription` APIs. Both need no extra config, and work on the [direct route and the gateway route](/concepts/routes/). The exception is `nova-3`.
+The package adds Workers AI to Laravel AI's `Audio` and `Transcription` APIs. Neither needs extra config, and both work on the [direct route and the gateway route](/concepts/routes/), except `nova-3`, which can't use a gateway.
 
 ## Generate speech
 
@@ -28,7 +28,7 @@ The default model is `@cf/deepgram/aura-2-en`. To change it, set `models.audio.d
 | `@cf/deepgram/aura-1` | `luna`, `angus`, `asteria`, `orion` and others |
 | `@cf/myshell-ai/melotts` | No voices. Set the language with `lang`. |
 
-Choose a voice with `voice()`. `male()` and `female()` pick `orion` and `luna`, or `nestor` and `carina` on the Spanish model.
+Choose a voice with `voice()`. The `male()` and `female()` shortcuts pick `orion` and `luna`, or `nestor` and `carina` on the Spanish model.
 
 ```php
 Audio::of('Hello.')->voice('asteria')->generate(provider: 'workers-ai');
@@ -38,7 +38,7 @@ Audio::of('Hello.')
     ->generate(provider: 'workers-ai', model: '@cf/myshell-ai/melotts');
 ```
 
-`withProviderOptions()` needs `laravel/ai` 1.0 or later. On Aura models, it also accepts `encoding`, `container`, `sample_rate` and `bit_rate`. These models have no input for `instructions()`, so that method has no effect here.
+`withProviderOptions()` needs `laravel/ai` 1.0 or later. On Aura models, it also accepts `encoding`, `container`, `sample_rate` and `bit_rate`. None of these models takes instructions, so `instructions()` has no effect here.
 
 ## Transcribe audio
 
@@ -69,13 +69,13 @@ The default model is `@cf/openai/whisper-large-v3-turbo`. To change it, set `mod
 | `@cf/openai/whisper` | No | No | Words |
 | `@cf/openai/whisper-tiny-en` | No, English only | No | Words |
 
-Accuracy varies, so test your own audio. In tests on 2026-11-05 with synthetic speech, `whisper-tiny-en` heard "invoice" as "inblice", and `whisper-large-v3-turbo` once heard it as "in-place".
+Accuracy varies, so test with your own audio. In tests on 2026-11-05 with synthetic speech, `whisper-tiny-en` heard "invoice" as "inblice", and `whisper-large-v3-turbo` once heard it as "in-place".
 
-`nova-3` cannot run through AI Gateway, so it throws when a gateway is set. Use a provider entry with no gateway for that call. The Whisper models work through a gateway, with `key` alone. See [Non-JSON models](/concepts/routes/#non-json-models).
+`nova-3` can't run through AI Gateway, so it throws when a gateway is set. Use a provider entry with no gateway for that call. The Whisper models do work through a gateway, with `key` alone. See [Non-JSON models](/concepts/routes/#non-json-models).
 
 ## Label speakers
 
-Only `nova-3` labels speakers. `diarize()` on another model throws before a request. A speaker-labeled call therefore cannot go through a gateway. Speakers are named `speaker_0`, `speaker_1` and so on.
+Only `nova-3` labels speakers (diarization), and `diarize()` on any other model throws before the request is sent. Since `nova-3` can't use a gateway, a speaker-labeled call can't either. Speakers are named `speaker_0`, `speaker_1` and so on.
 
 ```php
 $transcript = Transcription::fromPath(storage_path('app/call.mp3'))
@@ -89,7 +89,7 @@ foreach ($transcript->segments as $segment) {
 
 ## Long audio
 
-Laravel AI sends a 30-second timeout unless you set one. For long audio, set a longer one:
+Laravel AI uses a 30-second timeout unless you set one. For long audio, set a longer one:
 
 ```php
 Transcription::fromPath($path)->timeout(300)->generate(provider: 'workers-ai');
@@ -97,7 +97,7 @@ Transcription::fromPath($path)->timeout(300)->generate(provider: 'workers-ai');
 
 ## Omit the provider name
 
-Laravel AI's defaults are `openai` until you change them. Set them in `config/ai.php` to omit `provider:`:
+Laravel AI's defaults for both are `openai` until you change them. Set them in `config/ai.php` to leave out `provider:`:
 
 ```php
 'default_for_audio' => 'workers-ai',
@@ -120,4 +120,4 @@ Transcription::assertGenerated(fn ($prompt) => true);
 
 ## Cost
 
-Cloudflare bills speech and transcription in neurons. The package reports them with `WorkersAiUsageReported`. See [Cost tracking](/guides/cost-tracking/).
+Cloudflare bills speech and transcription in neurons, and the package reports them with the `WorkersAiUsageReported` event. See [Cost tracking](/guides/cost-tracking/).

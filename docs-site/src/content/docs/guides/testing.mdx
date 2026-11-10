@@ -5,7 +5,7 @@ sidebar:
   order: 12
 ---
 
-You do not need Cloudflare credentials to test your own code. Use the fakes in this page. The `Http::fake` example needs a fake token and account ID in config.
+You don't need Cloudflare credentials to test your own code. The fakes on this page send no requests, and the `Http::fake` example only needs a placeholder token and account ID in config.
 
 The examples use Pest. For PHPUnit, put the same calls in a test method and use `$this->assertSame(...)` in place of `expect(...)->toBe(...)`.
 
@@ -21,9 +21,9 @@ expect($response->text)->toBe('Reset it from the login page.');
 SupportAgent::assertPrompted('How do I reset my password?');
 ```
 
-With no list of responses, the fake returns `Fake response for prompt: ` followed by the first 10 words of the prompt. You can pass a closure that receives the prompt.
+With no list of responses, the fake returns `Fake response for prompt: ` followed by the first 10 words of the prompt. You can also pass a closure that receives the prompt.
 
-The fake replaces the gateway, so no request reaches the package. Use it to test your own logic.
+The fake replaces the whole provider call, so no request reaches the package. Use it to test your own logic.
 
 ## Fake embeddings
 
@@ -38,7 +38,7 @@ Embeddings::assertGenerated(fn ($prompt) => $prompt->inputs === ['hello']);
 
 ## Fake the HTTP layer
 
-To run the real package code, fake the HTTP call. This tests the request body and the response handling.
+To run the real package code, fake the HTTP call instead. This tests the request the package builds and how it handles the response.
 
 ```php
 use Illuminate\Http\Client\Request;
@@ -75,7 +75,7 @@ If your test config sets `gateway`, use the pattern `gateway.ai.cloudflare.com/*
 
 ## Fake images, speech, transcription and reranking
 
-Laravel AI's fakes work on this provider, and send no request. See [Image generation](/guides/images/#test-your-code), [Speech and transcription](/guides/audio/#test-your-code) and [Reranking](/guides/reranking/#test-your-code).
+Laravel AI's own fakes work on this provider and send no request. See [Image generation](/guides/images/#test-your-code), [Speech and transcription](/guides/audio/#test-your-code) and [Reranking](/guides/reranking/#test-your-code).
 
 ```php
 use Laravel\Ai\Audio;
@@ -104,7 +104,7 @@ Event::assertDispatched(WorkersAiUsageReported::class);
 
 ## Fake Clef
 
-Clef uses the Laravel AI classification API. Call `Classification::fake()` with one array per expected call. Each array maps a question key to an answer object.
+Clef uses the Laravel AI classification API, so use its fake. Call `Classification::fake()` with one array per expected call, where each array maps a question key to an answer object.
 
 ```php
 use Laravel\Ai\Classification;
@@ -125,13 +125,13 @@ expect($response['decision']->isTrue())->toBeTrue();
 Classification::assertClassified(fn (ClassificationPrompt $prompt) => $prompt->contains('Checkout') && $prompt->asks('decision'));
 ```
 
-A question with no answer in the fake gets a random answer of the right shape. Give an answer for every question your test reads. `assertNotClassified()` and `assertNothingClassified()` also exist. `Str::decide()` asks one question with the key `decision`, so the same fake works for it.
+A question with no answer in the fake gets a random answer of the right shape, so give an answer for every question your test reads. `assertNotClassified()` and `assertNothingClassified()` are also available. `Str::decide()` asks one question with the key `decision`, so the same fake works for it.
 
 Clef needs `laravel/ai` 1.0 or later. The fake sends no request.
 
 ## Fake Clairic
 
-`laravel/ai` has no extraction API, so the package adds `Meirdick\WorkersAi\Extraction::fake()`. Give one array per expected call. Each array maps a field name to a value.
+`laravel/ai` has no extraction API, so the package adds its own fake, `Meirdick\WorkersAi\Extraction::fake()`. Pass one array per expected call, where each array maps a field name to a value.
 
 ```php
 use Meirdick\WorkersAi\Extraction;
@@ -154,14 +154,14 @@ expect($invoice['total']->value())->toBe(1080)
 Extraction::assertExtracted(fn (ExtractionPrompt $prompt) => $prompt->contains('Dana') && $prompt->asks('total'));
 ```
 
-A field with no value in the fake is `null` with `pNull()` of `1.0`, the same as a real answer when the text does not determine the field. A call past the end of your list also returns `null` for every field.
+A field with no value in the fake is `null` with a `pNull()` of `1.0`, the same as a real answer when the text doesn't determine the field. A call past the end of your list also returns `null` for every field.
 
-You can pass a closure that receives the `ExtractionPrompt` and returns the map. Use `Extraction::isFaked()` to check the state. The assertions are `assertExtracted()`, `assertNotExtracted()` and `assertNothingExtracted()`. The fake sends no request.
+You can also pass a closure that receives the `ExtractionPrompt` and returns the map. `Extraction::isFaked()` tells you whether the fake is on. The assertions are `assertExtracted()`, `assertNotExtracted()` and `assertNothingExtracted()`. The fake sends no request.
 
 ## Test the extraction events
 
-Each Clairic call dispatches `Extracting`, then `Extracted` or `ExtractionFailed`. The events fire with `Extraction::fake()` too, because the fake replaces only the HTTP call. Use `Event::fake()` to assert them. See [Exceptions and events](/reference/exceptions-and-events/).
+Each Clairic call dispatches `Extracting`, then `Extracted` or `ExtractionFailed`. The events fire with `Extraction::fake()` too, because the fake replaces only the request. Use `Event::fake()` to assert them. See [Exceptions and events](/reference/exceptions-and-events/).
 
 ## Live tests
 
-The package repository has live tests that call Cloudflare. They are skipped unless you set `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT`. Set `WORKERS_AI_E2E_GATEWAY` for gateway tests, `WORKERS_AI_E2E_WEB_SEARCH=1` for web search, `WORKERS_AI_E2E_ARTIFACTS` to keep generated files, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep. You do not need them to use the package.
+This only matters if you work on the package itself. Its repository has live tests that call Cloudflare, skipped unless you set `WORKERS_AI_E2E_TOKEN` and `WORKERS_AI_E2E_ACCOUNT`. Set `WORKERS_AI_E2E_GATEWAY` for gateway tests, `WORKERS_AI_E2E_WEB_SEARCH=1` for web search, `WORKERS_AI_E2E_ARTIFACTS` to keep generated files, and `WORKERS_AI_E2E_STRESS=1` for the stress sweep.

@@ -5,13 +5,13 @@ sidebar:
   order: 11
 ---
 
-Cloudflare meters Workers AI in neurons, not tokens. Every model call returns a neuron figure, in `usage.neurons` or a `cf-ai-neurons` header. A cost model built on token counts gives the wrong number.
+Cloudflare bills Workers AI in neurons, its own usage unit, not in tokens. Every model call returns a neuron figure, in `usage.neurons` or a `cf-ai-neurons` header, so a cost model built on token counts gives the wrong number.
 
-The Laravel AI usage objects (`Usage`, `TextUsage`) and `Meta` have no field for neurons. The package gives you two ways to read them: an event and the raw response.
+Laravel AI's usage objects (`Usage`, `TextUsage`) and `Meta` have no field for neurons, so the package gives you two other ways to read them: an event and the raw response.
 
 ## Listen for the event
 
-The package dispatches `Meirdick\WorkersAi\Events\WorkersAiUsageReported` once per model call. This covers chat, embeddings, Clef, Clairic, images, speech, transcription and reranking. A tool loop with two steps dispatches two events.
+The package dispatches `Meirdick\WorkersAi\Events\WorkersAiUsageReported` once per model call, for chat, embeddings, Clef, Clairic, images, speech, transcription and reranking. A tool loop with two steps makes two model calls, so it dispatches two events.
 
 ```php
 use Illuminate\Support\Facades\Event;
@@ -33,17 +33,17 @@ The event has these public properties:
 | `completionTokens` | `int` | Completion tokens. |
 | `reasoningTokens` | `int` | Reasoning tokens. |
 
-The package dispatches nothing when the reply has no neuron figure, or the figure is 0.
+When the reply has no neuron figure, or the figure is 0, the package dispatches nothing.
 
 ## Streamed requests
 
-The event fires for streamed requests too (since 1.0.1). It fires once per model call, after the last chunk, with the call total. Cloudflare sends `usage.neurons` on every stream chunk. Early chunks hold a per-chunk figure and the last chunk holds the total. The package uses the last figure and does not add the chunks. A streamed tool loop dispatches one event per step.
+Since 1.0.1, the event fires for streamed requests too. It fires once per model call, after the last chunk, with the total for the call. Cloudflare sends `usage.neurons` on every stream chunk: early chunks hold a per-chunk figure and the last chunk holds the total. So the package uses the last figure rather than adding up the chunks. A streamed tool loop dispatches one event per step.
 
-`$response->raw` is not set on a stream. Use the event.
+`$response->raw` isn't set on a stream, so use the event there.
 
 ## Read the raw response
 
-The HTTP response is on the Laravel AI response, and on each step of a tool loop:
+You can also read the figure from the raw HTTP response, which is on the Laravel AI response and on each step of a tool loop:
 
 ```php
 $response = agent('You are a helpful assistant.')->prompt('...', provider: 'workers-ai');
@@ -52,11 +52,11 @@ $neurons = $response->raw?->json('usage.neurons');
 $latency = $response->raw?->transferStats?->getTransferTime();
 ```
 
-This needs a `laravel/ai` version where `StepResponse` has `withRawResponse()`. On `laravel/ai` 0.9, `raw` is `null`. Use the event there.
+This needs a `laravel/ai` version where `StepResponse` has `withRawResponse()`. On `laravel/ai` 0.9, `raw` is `null`, so use the event there.
 
 ## Token counts by `laravel/ai` line
 
-The usage object on the response differs by version. The event does not.
+The usage object on the response differs between the `laravel/ai` 0.9 to 0.11 line and the 1.x line. The event is the same on both.
 
 ```php
 // laravel/ai 0.9 to 0.11: promptTokens excludes cached tokens
@@ -74,9 +74,9 @@ See [AI Gateway](/guides/ai-gateway/) for a measured example.
 
 ## Calls on the run API
 
-Clef, Clairic, images, speech, transcription and reranking use `/ai/run`. They dispatch the same event, with `provider`, `model` and `neurons`. `promptTokens` and `completionTokens` hold the counts the model reports, as Cloudflare sends them. Speech and binary images report no tokens, so those fields are 0.
+Clef, Clairic, images, speech, transcription and reranking use Cloudflare's `/ai/run` API. They dispatch the same event, with `provider`, `model` and `neurons`. `promptTokens` and `completionTokens` hold whatever counts the model reports, as Cloudflare sends them. Speech and binary images report no tokens, so those fields are 0.
 
-A `$response->raw` is not available on these calls. Use the event. Token counts are on the response where the model reports them:
+These calls have no `$response->raw`, so use the event. Where the model reports token counts, they're on the response:
 
 ```php
 $response->usage->inputTokens;   // laravel/ai 1.x
@@ -87,7 +87,7 @@ Cloudflare prices Clef and Clairic per input token, with no charge for output. S
 
 ## Order of magnitude
 
-Reasoning costs neurons. Measured on 2026-09-09 on one account: on `@cf/openai/gpt-oss-120b`, one two-sentence prompt cost 9.6 neurons at `reasoning_effort: low` and 31.4 at `high`. A 16-token completion on `@cf/meta/llama-3.3-70b-instruct-fp8-fast` cost 4.48 neurons.
+To give you a sense of scale, here are figures measured on 2026-09-09 on one account. Reasoning costs neurons: on `@cf/openai/gpt-oss-120b`, one two-sentence prompt cost 9.6 neurons at `reasoning_effort: low` and 31.4 at `high`. A 16-token completion on `@cf/meta/llama-3.3-70b-instruct-fp8-fast` cost 4.48 neurons.
 
 ## Pricing
 

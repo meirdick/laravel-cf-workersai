@@ -6,19 +6,19 @@ sidebar:
   label: Clairic
 ---
 
-Clairic is Cloudflare's extraction model. You send an input, called the state, and a set of typed fields. It returns one value per field. A value can be read from the input, computed from it or predicted from it. When the input does not determine a value, the value is null.
+Clairic is Cloudflare's extraction model. You send an input, which Cloudflare calls the state, and a set of typed fields, and it returns one value per field. A value can be read straight from the input, computed from it or predicted from it. When the input doesn't determine a value, the value is null.
 
-Use Clairic when you cannot list the answers in advance, such as an invoice total or a due date. Use [Clef](/system-one/clef/) to choose among options you define.
+Use Clairic when you can't list the answers in advance, such as an invoice total or a due date. To choose among options you define, use [Clef](/system-one/clef/).
 
-Laravel AI has no extraction API, so the package adds `Extraction`. It has the same shape as `Classification`, and it works on every supported `laravel/ai` version.
+Laravel AI has no extraction API, so the package adds `Extraction`. It's built like `Classification`, and it works on every supported `laravel/ai` version.
 
 <Aside type="note" title="Clairic is a Cloudflare preview model">
-  Cloudflare says every answer is well formed, but not always correct. One- and two-step arithmetic is reliable. Long chains of steps are not, so extract the inputs and do the math in your code. Use `confidence()`, `pNull()` and the intervals to decide what to automate. See the [Clairic model page](https://developers.cloudflare.com/workers-ai/models/clairic/).
+  Cloudflare says every answer is well formed, but not always correct. One- and two-step arithmetic is reliable and long chains of steps aren't, so extract the inputs and do the math in your own code. Use `confidence()`, `pNull()` and the intervals to decide what to automate. See the [Clairic model page](https://developers.cloudflare.com/workers-ai/models/clairic/).
 </Aside>
 
 ## Extract values
 
-No extra config is needed. The `workers-ai` provider entry works on the [direct route and the gateway route](/concepts/routes/).
+You don't need extra config. Your `workers-ai` provider entry works on both the [direct route and the gateway route](/concepts/routes/).
 
 ```php
 use Meirdick\WorkersAi\Extraction;
@@ -79,9 +79,9 @@ $invoice['days_to_pay']->median();    // 30
 | `steps()` | One array of estimate figures for each forecast step. |
 | `type()`, `toArray()` | The answer type, and Cloudflare's whole answer. |
 
-On the response, `$invoice->truncated` is true when the state did not fit and Clairic cut it. `$invoice->usage` has the token counts.
+On the response, `$invoice->truncated` is true when the state was too long and Clairic cut it. `$invoice->usage` has the token counts.
 
-Use these figures to decide what to automate:
+These figures tell you which answers are safe to act on:
 
 ```php
 $total = $invoice['total'];
@@ -104,17 +104,17 @@ if ($total->isPresent(0.1) && $total->confidence() >= 0.9) {
 | `Estimate` | A median, a mean and an 80% interval. | Requires `min` and `max`. Also `step`, `scale`, `unit`, `instructions`. |
 | `Forecast` | One estimate per step. | Requires `min`, `max`, `horizon` and `interval`. |
 
-`Estimate` is best when the input has evidence, such as history or comparable items. Forecasting is basic, and it does not replace a time-series model.
+`Estimate` works best when the input has evidence to go on, such as history or comparable items. Forecasting is basic, and it doesn't replace a time-series model.
 
 On a forecast answer, `value()`, `median()`, `p10()` and `p90()` return a list with one item per step. `steps()` returns the same figures grouped by step.
 
 ## Read a PDF
 
-Clairic reads text and images. For a PDF or a Word file, convert it first with [`Markdown::of()`](/guides/documents/#convert-a-document-yourself).
+Clairic reads only text and images. For a PDF or a Word file, convert it to text first with [`Markdown::of()`](/guides/documents/#convert-a-document-yourself).
 
 ## Set the reference date
 
-A date written without a year needs an anchor. A field that depends on today's date needs one too.
+Clairic needs a reference date to resolve a date written without a year, or a field that depends on today's date. Set it with `referenceDate()`:
 
 ```php
 Extraction::of($text)->fields($fields)->referenceDate('2026-11-05')->extract();
@@ -122,7 +122,7 @@ Extraction::of($text)->fields($fields)->referenceDate('2026-11-05')->extract();
 
 ## Send images
 
-Send up to 4 JPEG, PNG or WebP images. The state can be blank when you send an image. Cloudflare allows 4 MiB per image and 8 MiB in total.
+You can send up to 4 JPEG, PNG or WebP images, and the state can be blank when you do. Cloudflare allows 4 MiB per image and 8 MiB in total.
 
 ```php
 use Laravel\Ai\Files\Image;
@@ -134,7 +134,7 @@ Extraction::of('', [Image::fromPath(storage_path('app/receipt.jpg'))])
 
 ## Change the call
 
-Each of these methods returns the pending extraction, so you can chain them.
+Each of these methods returns the pending extraction, so you can chain them:
 
 ```php
 Extraction::of($text)
@@ -149,7 +149,7 @@ Extraction::of($text)
 - With `return_state_text`, the text Clairic read is on `$invoice->stateText`.
 - `withHeaders()` adds headers for one call, on `laravel/ai` 1.x. On earlier versions, use the `headers` config key.
 - With no `provider:`, the package uses `ai.default` if that is a Workers AI provider, otherwise the `workers-ai` entry.
-- Set your default model in `models.extraction.default`. A model that is not Clairic throws before a request.
+- Set your default model in `models.extraction.default`. If you name a model that isn't Clairic, the package throws before it sends the request.
 
 ## Fail over
 
@@ -163,7 +163,7 @@ Add a second provider entry to `config/ai.php`, such as another Workers AI accou
 ],
 ```
 
-Then give a list of providers. The package tries the next one on a failure that can pass on another provider.
+Then pass a list of providers. The package tries the next provider when a call fails in a way a different provider could avoid, such as HTTP 429 or 503.
 
 ```php
 ->extract(provider: ['workers-ai', 'workers-ai-backup']);
@@ -171,7 +171,7 @@ Then give a list of providers. The package tries the next one on a failure that 
 
 ## Test your code
 
-`Extraction::fake()` replaces the request. Map each field name to the value you want. A field with no value is null, with `pNull()` at 1.0.
+`Extraction::fake()` replaces the request, so nothing reaches Cloudflare. Map each field name to the value you want back. A field you leave out is null, with `pNull()` at 1.0.
 
 ```php
 use Meirdick\WorkersAi\Extraction;
@@ -185,7 +185,7 @@ Extraction::assertNotExtracted(fn (ExtractionPrompt $prompt) => $prompt->contain
 Extraction::assertNothingExtracted();
 ```
 
-`fake()` also accepts a closure that receives the prompt. A response can be a whole `ExtractionResponse`.
+`fake()` also accepts a closure that receives the prompt, and a fake response can be a whole `ExtractionResponse`.
 
 ## Events
 
@@ -193,8 +193,8 @@ The package dispatches `Extracting`, `Extracted` and `ExtractionFailed`, in `Mei
 
 ## Errors
 
-Clairic has the same failures as [Clef](/system-one/clef/#errors). A blank state with no image, or no fields, throws `InvalidArgumentException` before a request.
+Clairic fails in the same ways as [Clef](/system-one/clef/#errors). On top of that, a blank state with no image, or a call with no fields, throws `InvalidArgumentException` before the request is sent.
 
 ## Cost
 
-Cloudflare charges for input tokens only. Read the count with `$invoice->usage`: `inputTokens` on `laravel/ai` 1.x, `promptTokens` on earlier versions. `WorkersAiUsageReported` reports the neuron figure. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).
+Cloudflare charges for input tokens only. Read the count from `$invoice->usage`: `inputTokens` on `laravel/ai` 1.x, `promptTokens` on earlier versions. The `WorkersAiUsageReported` event also reports the neuron figure. See the [Workers AI pricing page](https://developers.cloudflare.com/workers-ai/platform/pricing/).

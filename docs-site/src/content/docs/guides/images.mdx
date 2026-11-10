@@ -5,9 +5,9 @@ sidebar:
   order: 6.1
 ---
 
-The package adds Workers AI to Laravel AI's `Image` API. It needs no extra config, and works on the [direct route and the gateway route](/concepts/routes/).
+The package adds Workers AI to Laravel AI's `Image` API. It needs no extra config and works on the [direct route and the gateway route](/concepts/routes/).
 
-To send an image to a chat model, see [Image input](/guides/image-input/) instead.
+To send an image to a chat model instead, see [Image input](/guides/image-input/).
 
 ## Generate an image
 
@@ -41,7 +41,7 @@ With no size or quality, Cloudflare uses the model's defaults. More steps take l
 
 ## Choose a model
 
-The default is `@cf/black-forest-labs/flux-2-klein-4b`. To change it, set `models.image.default` on the provider entry in `config/ai.php`, or pass `model:` to `generate()`. Each model has its own limits. See the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
+The default is `@cf/black-forest-labs/flux-2-klein-4b`. To change it, set `models.image.default` on the provider entry in `config/ai.php`, or pass `model:` to `generate()`. Each model has its own limits; see the [Cloudflare model catalog](https://developers.cloudflare.com/workers-ai/models/).
 
 | Model | Size | Reference images |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ The default is `@cf/black-forest-labs/flux-2-klein-4b`. To change it, set `model
 | `@cf/bytedance/stable-diffusion-xl-lightning`, `@cf/stabilityai/stable-diffusion-xl-base-1.0`, `@cf/lykon/dreamshaper-8-lcm` | Yes | No |
 | `@cf/leonardo/lucid-origin`, `@cf/leonardo/phoenix-1.0` | Yes | No |
 
-To use a model's other inputs, add them with `withProviderOptions()`. It needs `laravel/ai` 1.0 or later.
+To use a model's other inputs, add them with `withProviderOptions()`, which needs `laravel/ai` 1.0 or later.
 
 ```php
 Image::of('A green apple.')
@@ -60,7 +60,7 @@ Image::of('A green apple.')
 
 ## Use reference images
 
-FLUX.2 models take up to 4 reference images. Cloudflare says each one must be smaller than 512 x 512. In the prompt, refer to them by position or in plain words.
+FLUX.2 models take up to 4 reference images, which Cloudflare says must each be smaller than 512 x 512. In the prompt, refer to them by position, starting at 0, or in plain words.
 
 ```php
 use Laravel\Ai\Files\Image as ImageFile;
@@ -73,11 +73,11 @@ $image = Image::of('Take the subject of image 1 and style it like image 0.')
     ->generate(provider: 'workers-ai');
 ```
 
-A fifth image throws before a request. So does an attachment on a model that does not take one.
+A fifth image throws before the request is sent, and so does an attachment on a model that doesn't take reference images.
 
 ## Omit the provider name
 
-Laravel AI's `default_for_images` is `gemini` until you change it. Set it in `config/ai.php` to omit `provider:`:
+Laravel AI's `default_for_images` is `gemini` until you change it. Set it in `config/ai.php` to leave out `provider:`:
 
 ```php
 'default_for_images' => 'workers-ai',
@@ -85,11 +85,11 @@ Laravel AI's `default_for_images` is `gemini` until you change it. Set it in `co
 
 ## FLUX.2 and AI Gateway
 
-FLUX.2 models send multipart, so with a gateway they use the gateway's own URL. On an authenticated gateway, they need `gateway_token`, on both the gateway route and the header route. Other image models need only `key`. See [Non-JSON models](/concepts/routes/#non-json-models).
+FLUX.2 models send a multipart form instead of JSON, so with a gateway they use the gateway's own URL. On an authenticated gateway they need `gateway_token`, on both the gateway route and the header route. Other image models need only `key`. See [Non-JSON models](/concepts/routes/#non-json-models).
 
 ## Errors
 
-Cloudflare's content filter can reject a prompt with `400 Input prompt contains NSFW content`, and it can flag harmless prompts. In tests on 2026-11-05, it rejected "A green apple on a wooden table." on `phoenix-1.0` in 3 of 8 runs. The same prompt passed on the other models tested. Try again, reword the prompt, or use another model.
+Cloudflare's content filter can reject a prompt with `400 Input prompt contains NSFW content`, and it sometimes flags harmless ones. In tests on 2026-11-05, it rejected "A green apple on a wooden table." on `phoenix-1.0` in 3 of 8 runs, while the same prompt passed on the other models tested. Try again, reword the prompt, or use another model.
 
 ## Test your code
 
@@ -104,4 +104,4 @@ Image::assertGenerated(fn ($prompt) => $prompt->contains('apple'));
 
 ## Cost
 
-Cloudflare bills images in neurons. One `flux-1-schnell` image at 1 step cost 57.6 neurons in a test on 2026-11-05. The package reports the figure with `WorkersAiUsageReported`. See [Cost tracking](/guides/cost-tracking/).
+Cloudflare bills images in neurons. In a test on 2026-11-05, one `flux-1-schnell` image at 1 step cost 57.6 neurons. The package reports the figure with the `WorkersAiUsageReported` event. See [Cost tracking](/guides/cost-tracking/).

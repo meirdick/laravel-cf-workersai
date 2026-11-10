@@ -8,32 +8,32 @@ sidebar:
 ## Limits
 
 - Text, embeddings, Clef classification, Clairic extraction and image input.
-- Clairic is a Cloudflare preview model. Its behavior can change.
-- Clef and Clairic do not use the `/compat` path. A `url` that ends in `/compat` throws for those calls.
-- Chat models take no audio or video attachments. Documents need `convert_documents`. See [Documents](/guides/documents/).
-- `nova-3` cannot run through AI Gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
+- Clairic is a Cloudflare preview model, so its behavior can change.
+- Clef and Clairic don't use the `/compat` path, so a `url` that ends in `/compat` throws for those calls.
+- Chat models take no audio or video attachments, and documents need `convert_documents`. See [Documents](/guides/documents/).
+- `nova-3` can't run through AI Gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
 - No Laravel AI provider tools. [`CloudflareWebSearch`](/guides/web-search/) is a normal tool that searches the web.
-- No request concurrency limit. The package retries HTTP 429. It does not prevent it.
-- The package does not check model names.
-- The package does not set up your AI Gateway. Create and configure it in the Cloudflare dashboard.
-- Reasoning controls depend on the model. Some models ignore `reasoning_effort`.
-- Timing and rate figures in these docs come from tests on one account. Your results can differ.
+- No limit on concurrent requests. The package retries HTTP 429, but it doesn't prevent it.
+- The package doesn't check model names.
+- The package doesn't set up your AI Gateway. Create and configure it in the Cloudflare dashboard.
+- Reasoning controls depend on the model, and some models ignore `reasoning_effort`.
+- Timing and rate figures in these docs come from tests on one account, so your results can differ.
 
 ## FAQ
 
 ### Do I need AI Gateway?
 
-No. Set only `account_id` to call Workers AI directly. Add `gateway` to get logs, analytics, caching and gateway retries. See [AI Gateway](/guides/ai-gateway/).
+No. Set only `account_id`, and the package calls Workers AI directly. Add `gateway` if you want logs, analytics, caching and gateway retries. See [AI Gateway](/guides/ai-gateway/).
 
 ### Do I need AI Gateway for Clef and Clairic?
 
-No. Both work on the direct route. Set `account_id` and `key`. Add `gateway` only if you want gateway logs. The package sends it as the `cf-aig-gateway-id` header.
+No. Both work on the direct route with just `account_id` and `key`. Add `gateway` only if you want gateway logs; the package sends it as the `cf-aig-gateway-id` header.
 
 ### What is the difference between this package and the openai-compatible driver?
 
-The Laravel AI `openai-compatible` driver works with the Cloudflare `/compat` URL. If you use one model for text and set `#[MaxTokens]` on every agent, that driver can be enough.
+Laravel AI's `openai-compatible` driver works with the Cloudflare `/compat` URL. If you only use one model for text and set `#[MaxTokens]` on every agent, that driver can be enough.
 
-Use this package when you need one or more of these:
+Use this package when you need any of these:
 
 - A default token cap. Without a cap, Cloudflare stops most models at 256 tokens.
 - An exception when a reasoning model spends its whole budget on thinking and returns nothing.
@@ -45,15 +45,15 @@ Use this package when you need one or more of these:
 
 ### Which token permission do I need?
 
-A token with the permission named Account > Workers AI > Read in the Cloudflare dashboard. For an authenticated gateway, chat and embeddings also need `gateway_token`.
+A token with the permission named Account > Workers AI > Read in the Cloudflare dashboard. On an authenticated gateway, chat and embeddings also need `gateway_token`.
 
 ### Does it work with Laravel Cloud, queues and Horizon?
 
-The package is a normal Cloudflare Workers AI provider for Laravel AI. It makes HTTP calls with the Laravel HTTP client. Anything Laravel AI supports for queued agents works the same. Set `#[Timeout]` to fit your job timeout.
+Yes. The package is a normal Laravel AI provider that makes HTTP calls with Laravel's HTTP client, so anything Laravel AI supports for queued agents works the same way. Set `#[Timeout]` to fit inside your job timeout.
 
 ### Which model should I use?
 
-For agents with tools, start with `@cf/openai/gpt-oss-120b`. For a cheap model, use `#[UseCheapestModel]`. Test your own prompts. See [Models](/guides/models/).
+For agents with tools, start with `@cf/openai/gpt-oss-120b`. For a cheap model, use `#[UseCheapestModel]`. Either way, test with your own prompts. See [Models](/guides/models/).
 
 ### Why does my reasoning model return nothing?
 
@@ -61,15 +61,15 @@ It used the whole token cap on thinking. See [Reasoning models](/guides/reasonin
 
 ### Can I use two Workers AI accounts?
 
-Yes. Add two provider entries in `config/ai.php`, each with `'driver' => 'workers-ai'` and its own `account_id` and `key`. Give each entry its own name.
+Yes. Add two provider entries to `config/ai.php` with different names, each with `'driver' => 'workers-ai'` and its own `account_id` and `key`.
 
 ### Does the package send data anywhere except Cloudflare?
 
-No. Requests go to the URL that your config resolves to.
+No. Requests go only to the URL your config resolves to.
 
 ### Is the package production ready?
 
-Version 1.3.0 is current. The 1.x line follows semantic versioning, and 1.0.0 was the first stable release. It supports `laravel/ai` 0.9 to 1.3. Clairic is a Cloudflare preview model, so test it on your own data. Read the [changelog](/changelog/) before you upgrade.
+Version 1.3.0 is current. The 1.x line follows semantic versioning, 1.0.0 was the first stable release, and it supports `laravel/ai` 0.9 to 1.3. Clairic is still a Cloudflare preview model, so test it on your own data. Read the [changelog](/changelog/) before you upgrade.
 
 ### How do I report a bug?
 

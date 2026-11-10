@@ -5,7 +5,7 @@ sidebar:
   order: 4
 ---
 
-Implement `Laravel\Ai\Contracts\HasStructuredOutput` on the agent. Return a schema from `schema()`.
+Implement `Laravel\Ai\Contracts\HasStructuredOutput` on the agent and return a schema from `schema()`:
 
 ```php
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -41,15 +41,15 @@ The package sends the schema as `response_format` with type `json_schema`.
 
 ## Strict mode
 
-Add `#[Strict]` to the agent. The request then sends `strict: true`, and the schema requires all properties. Without `#[Strict]`, the request sends `strict: false`.
+Add `#[Strict]` to the agent. The request then sends `strict: true`, and the schema requires every property. Without `#[Strict]`, it sends `strict: false`.
 
-Some models ignore the strict flag. The re-ask below catches those cases.
+Some models ignore the strict flag, and the re-ask below catches those cases.
 
 ## Automatic re-ask
 
-Workers AI JSON mode is best-effort. A model can omit a required field or return a value outside an enum.
+Workers AI's JSON mode is best-effort, so a model can leave out a required field or return a value outside an enum.
 
-The package checks each structured response for required fields and enum values. If the check fails, it adds the error to the conversation and asks again. It asks up to `structured_output_retries` times. The default is 2.
+The package checks each structured response for required fields and enum values. If the check fails, it adds the error to the conversation and asks again, up to `structured_output_retries` times (2 by default).
 
 ```php
 'workers-ai' => [
@@ -58,12 +58,12 @@ The package checks each structured response for required fields and enum values.
 ],
 ```
 
-The package does not re-ask after a finish reason of `length`. The output was cut off, so raise the token cap. A re-ask runs inside one step and does not count against `#[MaxSteps]`.
+The package doesn't re-ask when the finish reason is `length`, because the output was cut off. Raise the token cap instead. A re-ask runs inside one step, so it doesn't count against `#[MaxSteps]`.
 
 ## Give structured calls enough budget
 
-Reasoning and the answer share one token cap. A reasoning model can spend the whole cap on thinking and leave no room for the JSON. For schema work:
+Reasoning and the answer share one token cap, so a reasoning model can spend the whole cap on thinking and leave no room for the JSON. For schema work:
 
 - Set `#[ReasoningEffort(ReasoningEffort::LOW)]`. See [Reasoning models](/guides/reasoning/).
-- Raise `#[Timeout]`. Structured calls run longer.
+- Raise `#[Timeout]`, because structured calls run longer.
 - Turn on `throw_on_truncation`, so a cut-off JSON object throws instead of returning bad JSON. See [Errors and retries](/guides/errors-and-retries/).

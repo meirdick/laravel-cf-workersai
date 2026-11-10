@@ -5,7 +5,7 @@ sidebar:
   order: 1
 ---
 
-Secrets and values that change per environment go in your application's `.env` file. Other package settings go in `config/ai.php`, under `providers.workers-ai`. Laravel AI's own keys, such as `default_for_classification`, are at the top level of that file. You choose the provider name. The `driver` value is `workers-ai`.
+Secrets, and values that change per environment, go in your application's `.env` file. All other package settings go in `config/ai.php`, under `providers.workers-ai`. Laravel AI's own keys, such as `default_for_classification`, sit at the top level of that file. You can name the provider entry anything you like, but its `driver` value must be `workers-ai`.
 
 ## Environment variables
 
@@ -27,7 +27,7 @@ CLOUDFLARE_AI_URL=
 | `CLOUDFLARE_AI_GATEWAY_TOKEN` | `gateway_token` | An authenticated gateway |
 | `CLOUDFLARE_AI_URL` | `url` | A custom URL |
 
-The package does not read these variables by itself. Each one takes effect when `config/ai.php` reads it with `env()`, as in the example below. These names are a convention, so you can use others. See [Direct and gateway routes](/concepts/routes/) for what each route needs.
+The package doesn't read these variables itself. Each one takes effect only when `config/ai.php` reads it with `env()`, as in the example below. The names are just a convention, so you can use others. See [Direct and gateway routes](/concepts/routes/) for what each route needs.
 
 ## Full example
 
@@ -96,7 +96,7 @@ The package does not read these variables by itself. Each one takes effect when 
 | `session_affinity` | string | none | Value for the `x-session-affinity` header. |
 | `headers` | array | `[]` | Extra HTTP headers. They replace package headers of the same name, matched without regard to case. Also receives headers set with `Provider::withHeaders()` on `laravel/ai` 1.x. |
 
-The package resolves the endpoint in this order: `url`, then `account_id` with `gateway`, then `account_id` alone. See [Routes](/concepts/routes/).
+The package picks the endpoint from the first of these that is set: `url`, then `account_id` with `gateway`, then `account_id` alone. See [Routes](/concepts/routes/).
 
 ## Generation
 
@@ -121,7 +121,7 @@ The package resolves the endpoint in this order: `url`, then `account_id` with `
 
 ## Default classification provider
 
-This key belongs to Laravel AI, not to this package. Set it in `config/ai.php` at the top level, next to `default`.
+This key belongs to Laravel AI, not to this package. Set it at the top level of `config/ai.php`, next to `default`.
 
 | Key | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -153,4 +153,4 @@ This key belongs to Laravel AI, not to this package. Set it in `config/ai.php` a
 
 ## Provider names
 
-The service provider registers the driver as `workers-ai`. It also registers the alias `workersai`, so a provider entry with `'driver' => 'workersai'` works too.
+The package registers the driver as `workers-ai`, plus the alias `workersai`, so a provider entry with `'driver' => 'workersai'` works too.

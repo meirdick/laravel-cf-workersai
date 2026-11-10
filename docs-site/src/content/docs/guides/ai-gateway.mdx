@@ -5,15 +5,13 @@ sidebar:
   order: 8
 ---
 
-Cloudflare AI Gateway is a proxy for AI requests. It adds request logs, cost analytics, caching and rate limits in the Cloudflare dashboard. You create and configure a gateway in the dashboard. The package only sends requests to it.
-
-To compare the gateway route with the direct route, see [Direct and gateway routes](/concepts/routes/).
+Cloudflare AI Gateway is a proxy for AI requests. It gives you request logs, cost analytics, caching and rate limits in the Cloudflare dashboard. You create and configure the gateway in the dashboard; the package only sends requests to it. To compare the gateway route with the direct route, see [Direct and gateway routes](/concepts/routes/).
 
 ## Route requests through a gateway
 
 <Steps>
   <Step title="Create a gateway">
-    In the Cloudflare dashboard, go to AI, then AI Gateway, then Create Gateway. Copy the gateway name. This name is the slug.
+    In the Cloudflare dashboard, go to AI, then AI Gateway, then Create Gateway. Copy the gateway name; this is the slug the package needs.
   </Step>
   <Step title="Add the slug to your .env file">
     Add this line to your application's `.env` file:
@@ -23,7 +21,7 @@ To compare the gateway route with the direct route, see [Direct and gateway rout
     ```
   </Step>
   <Step title="Read it in config/ai.php">
-    Add the `gateway` line to the provider entry. It reads the value from `.env`, so do not write the slug here.
+    Add the `gateway` line to the provider entry. It reads the slug from `.env`, so don't write the slug here.
 
     ```php
     'workers-ai' => [
@@ -35,20 +33,20 @@ To compare the gateway route with the direct route, see [Direct and gateway rout
     ```
   </Step>
   <Step title="Send a request and open the logs">
-    Your calling code does not change. Open the gateway in the dashboard and go to Logs. Text and embedding calls show under `compat`.
+    Your calling code doesn't change. To confirm the route works, open the gateway in the dashboard and go to Logs. Text and embedding calls show up under `compat`.
   </Step>
 </Steps>
 
 Text and embedding calls go to `https://gateway.ai.cloudflare.com/v1/<account_id>/<gateway>/compat`. Clef and Clairic calls go to `api.cloudflare.com` with a `cf-aig-gateway-id` header, and Cloudflare applies the gateway's features to them.
 
-Use only the slug. If you give a URL or a value with a slash, the package throws and tells you to use the `url` key.
+Use only the slug. If you give a URL or a value with a slash, the package throws and points you to the `url` key.
 
 ## Authenticated Gateway
 
-With Authenticated Gateway on, `gateway.ai.cloudflare.com` rejects a request that has no gateway token. To set it up:
+Authenticated Gateway is a gateway setting that makes `gateway.ai.cloudflare.com` reject any request without a gateway token. To set it up:
 
 1. Open the gateway settings in the dashboard.
-2. Create an authentication token. This is the gateway token, and it has Run permission. Copy it.
+2. Create an authentication token and copy it. This is the gateway token, and it has Run permission.
 3. Turn on Authenticated Gateway.
 4. Add the token to your application's `.env` file:
 
@@ -65,17 +63,17 @@ CLOUDFLARE_AI_GATEWAY_TOKEN=your-gateway-token
 ],
 ```
 
-The package sends `cf-aig-authorization: Bearer <gateway_token>`. Your `key` still goes in `Authorization`. If `gateway_token` is empty, the package does not send the header.
+The package sends `cf-aig-authorization: Bearer <gateway_token>`, and your `key` still goes in `Authorization`. If `gateway_token` is empty, the package doesn't send the header.
 
-Calls to `api.cloudflare.com`, such as Clef and Clairic, do not need the gateway token. That API reads your API token from `Authorization`. Tested on 2026-11-05. FLUX.2 image models do need it. See [Non-JSON models](/concepts/routes/#non-json-models).
+Calls that go to `api.cloudflare.com`, such as Clef and Clairic, don't need the gateway token, because that API reads your API token from `Authorization` (tested on 2026-11-05). FLUX.2 image models are the exception and do need it. See [Non-JSON models](/concepts/routes/#non-json-models).
 
-Without the header, or with a wrong token, an authenticated gateway returns HTTP 401 with `{"code":2009,"message":"Unauthorized"}`. Laravel throws `Illuminate\Http\Client\RequestException`. The message does not name the gateway or the header, so check `gateway_token` first.
+Without the header, or with a wrong token, an authenticated gateway returns HTTP 401 with `{"code":2009,"message":"Unauthorized"}`, and Laravel throws `Illuminate\Http\Client\RequestException`. The message doesn't name the gateway or the header, so check `gateway_token` first.
 
 ## Direct route with a gateway header
 
-Cloudflare's REST API on `api.cloudflare.com` also routes through a gateway. Send the `cf-aig-gateway-id` header on the direct route. It needs no `gateway` key, and no second token even on an authenticated gateway. FLUX.2 is the exception, and `nova-3` cannot use a gateway. See [Non-JSON models](/concepts/routes/#non-json-models).
+You can also get gateway features while staying on the direct route. Cloudflare's REST API on `api.cloudflare.com` routes a request through a gateway when it carries the `cf-aig-gateway-id` header. This needs no `gateway` key, and no second token even on an authenticated gateway. The exceptions are FLUX.2, which still needs the token, and `nova-3`, which can't use a gateway at all. See [Non-JSON models](/concepts/routes/#non-json-models).
 
-Keep the slug in your application's `.env` file, as `CLOUDFLARE_AI_GATEWAY`, and read it in `config/ai.php`:
+Keep the slug in your application's `.env` file as `CLOUDFLARE_AI_GATEWAY`, and read it in `config/ai.php`:
 
 ```php
 'workers-ai' => [
@@ -86,11 +84,11 @@ Keep the slug in your application's `.env` file, as `CLOUDFLARE_AI_GATEWAY`, and
 ],
 ```
 
-Text, Clef, Clairic and embeddings all returned HTTP 200 this way on 2026-11-05. Cloudflare's gateway docs list chat completions on this API, but not embeddings. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
+Text, Clef, Clairic and embeddings all returned HTTP 200 this way on 2026-11-05, although Cloudflare's gateway docs list only chat completions on this API, not embeddings. See the [AI Gateway REST API](https://developers.cloudflare.com/ai-gateway/usage/rest-api/).
 
 ## Third-party models
 
-Cloudflare's REST API serves other providers' models with your Cloudflare token. Use the direct route, and name the model in `author/model` form:
+Cloudflare's REST API also serves other providers' models, such as OpenAI's, with your Cloudflare token. Use the direct route, and name the model in `author/model` form:
 
 ```php
 use function Laravel\Ai\agent;
@@ -98,17 +96,17 @@ use function Laravel\Ai\agent;
 agent()->prompt('Hello', provider: 'workers-ai', model: 'openai/gpt-5.5');
 ```
 
-- Cloudflare bills the call from AI Gateway credits, or uses a key stored under the `default` alias. See [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/) and [BYOK](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/).
+- Cloudflare bills the call from your AI Gateway credits, or uses a provider key you stored under the `default` alias. See [Unified Billing](https://developers.cloudflare.com/ai-gateway/features/unified-billing/) and [bring your own keys (BYOK)](https://developers.cloudflare.com/ai-gateway/configuration/bring-your-own-keys/).
 - The call goes through your account's default gateway. To pick another, add the `cf-aig-gateway-id` header as in the previous section.
-- The token needs Account, Workers AI, Read, the same as other calls. Tested on 2026-11-05 with `openai/gpt-4.1-mini`.
+- The token needs Account, Workers AI, Read, the same as other calls (tested on 2026-11-05 with `openai/gpt-4.1-mini`).
 
 <Aside type="caution" title="Do not use the gateway key for third-party models">
-  With `gateway` set, the call goes to `/compat` and the package sends `key` as `Authorization`. Cloudflare forwards that header to the provider as a provider key, and it does not use a stored key. A Cloudflare token is not a valid provider key, so the call returns HTTP 401 with OpenAI's `Incorrect API key provided`. Tested on 2026-11-05.
+  With `gateway` set, the call goes to `/compat` and the package sends `key` as `Authorization`. Cloudflare forwards that header to the provider as the provider's own key, instead of using a key you stored. A Cloudflare token isn't a valid provider key, so the call returns HTTP 401 with OpenAI's `Incorrect API key provided` (tested on 2026-11-05).
 </Aside>
 
 ## Use another provider's driver through a gateway
 
-You can point another Laravel AI driver at a gateway to get logs and caching. Use your own provider key, because Laravel AI's drivers always send `key` as `Authorization`. Add the key to your application's `.env` file as `OPENAI_API_KEY`. `BaseUrl::providerUrl()` builds the URL in `config/ai.php`:
+You can point another Laravel AI driver, such as `openai`, at your gateway to get its logs and caching. You need your own provider key for this, because Laravel AI's drivers always send `key` as `Authorization`. Add the key to your application's `.env` file as `OPENAI_API_KEY`, and build the URL in `config/ai.php` with `BaseUrl::providerUrl()`:
 
 ```php
 use Meirdick\WorkersAi\Cloudflare\BaseUrl;
@@ -122,7 +120,7 @@ use Meirdick\WorkersAi\Cloudflare\BaseUrl;
 ],
 ```
 
-Replace `'openai'` with `'anthropic'` or another provider slug. Do not call `config()` here, because `config/ai.php` is still loading. To use a stored key instead, use [third-party models](#third-party-models).
+For another provider, replace `'openai'` with `'anthropic'` or that provider's slug. Don't call `config()` here, because `config/ai.php` is still loading. If you'd rather use a key stored on the gateway, see [third-party models](#third-party-models).
 
 ## Use the provider path
 
@@ -136,7 +134,7 @@ To use `<gateway>/workers-ai/v1` instead of `/compat`, set `gateway_path`:
 
 ## Use a custom URL
 
-Set `url` for a full URL, such as a proxy. Add it to your application's `.env` file as `CLOUDFLARE_AI_URL`, and read it in `config/ai.php`. Do not set `account_id` with it, because the package throws if both are set.
+Set `url` when you need a full URL the package doesn't build, such as a proxy. Add it to your application's `.env` file as `CLOUDFLARE_AI_URL` and read it in `config/ai.php`. Don't set `account_id` alongside it, because the package throws if both are set.
 
 ```php
 'workers-ai' => [
@@ -146,7 +144,7 @@ Set `url` for a full URL, such as a proxy. Add it to your application's `.env` f
 ],
 ```
 
-If the URL ends in `/compat`, the package adds the `workers-ai/` model prefix, and Clef and Clairic throw. For any other URL, it sends the bare model name. See [Where each call goes](/concepts/routes/#where-each-call-goes).
+If the URL ends in `/compat`, the package adds the `workers-ai/` model prefix, and Clef and Clairic calls throw. For any other URL, it sends the bare model name. See [Where each call goes](/concepts/routes/#where-each-call-goes).
 
 ## Session affinity
 
@@ -159,13 +157,13 @@ Set `session_affinity` to send the `x-session-affinity` header on every request:
 ],
 ```
 
-Related requests then reach the same cache shard, which helps the model prefix cache. See the next section.
+Requests with the same value then reach the same cache shard, which gives the model's prompt cache a better chance of a hit. See the next section.
 
 ## Cached tokens
 
-Some models cache the start of a prompt, and a cache hit costs fewer neurons. Cloudflare reports the cached count in `usage.prompt_tokens_details.cached_tokens`.
+Some models cache the start of a prompt, and a cache hit costs fewer neurons. Cloudflare reports how many tokens came from the cache in `usage.prompt_tokens_details.cached_tokens`.
 
-The two `laravel/ai` lines count differently:
+The package supports two `laravel/ai` release lines, 0.9 to 0.11 and 1.x, and they count cached tokens differently:
 
 - **`laravel/ai` 0.9 to 0.11.** `Usage::$promptTokens` is the uncached count. `Usage::$cacheReadInputTokens` is the cached count. The two add up to the `prompt_tokens` that Cloudflare reports.
 - **`laravel/ai` 1.x.** The package returns `TextUsage`. `inputTokens` is the `prompt_tokens` that Cloudflare reports, with cached tokens included. `cacheReadInputTokens` is the cached part of it. It is `null` when the response has no cache field. `outputTokens` is the completion count.
@@ -183,24 +181,24 @@ $cached   = $response->usage->cacheReadInputTokens ?? 0;
 $uncached = $total - $cached;
 ```
 
-Two identical calls on `@cf/zai-org/glm-5.3-flash`, under one `x-session-affinity` value, measured on 2026-09-16:
+Here are two identical calls on `@cf/zai-org/glm-5.3-flash` with the same `x-session-affinity` value, measured on 2026-09-16. The second call hit the cache and cost less than half:
 
 | Call | Wire `prompt_tokens` | Wire `cached_tokens` | 0.x `promptTokens` | 1.x `inputTokens` | `cacheReadInputTokens` | Neurons |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 | 1221 | 0 | 1221 | 1221 | 0 | 17.8 |
 | 2 | 1221 | 1216 | 5 | 1221 | 1216 | 8.3 |
 
-The cache depends on the model. In tests, `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache. `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
+Whether this works depends on the model. In tests, `@cf/zai-org/glm-5.3-flash` and `@cf/moonshotai/kimi-k2.6` hit the cache, while `@cf/meta/llama-3.3-70b-instruct-fp8-fast`, `@cf/meta/llama-4-scout-17b-16e-instruct` and `@cf/openai/gpt-oss-120b` did not.
 
 <Aside type="note">
-  This model prefix cache is separate from AI Gateway response caching. The package has no setting for gateway response caching. Set that in the dashboard.
+  This prompt cache inside the model is separate from AI Gateway's response caching. The package has no setting for gateway response caching; set that in the dashboard.
 </Aside>
 
 `#[CacheInstructions]` from Laravel AI has no effect on this provider.
 
 ## Custom headers
 
-The package sends the `headers` array from the provider config. A configured header replaces a package header with the same name. Names match without regard to case. The package sends these headers on chat, streaming and embeddings.
+The package sends the `headers` array from the provider config on chat, streaming and embeddings calls. If one of your headers has the same name as a header the package sets, yours wins. Names match without regard to case.
 
 ```php
 'workers-ai' => [
@@ -209,12 +207,12 @@ The package sends the `headers` array from the provider config. A configured hea
 ],
 ```
 
-On `laravel/ai` 1.x, `Provider::withHeaders()` writes to the same array, so per-call headers reach Workers AI. Before package version 1.0.0, the package dropped the `headers` key and per-call headers.
+On `laravel/ai` 1.x, `Provider::withHeaders()` writes to the same array, so per-call headers reach Workers AI too. Before version 1.0.0, the package dropped both the `headers` key and per-call headers.
 
 ## Logging
 
-AI Gateway logs are in the Cloudflare dashboard. The package does not write request logs. It writes one warning to the Laravel log when it raises the token cap for a `thinking` request.
+AI Gateway logs are in the Cloudflare dashboard. The package doesn't write request logs. The only thing it writes to the Laravel log is a warning when it raises the token cap for a `thinking` request.
 
 ## Gateway retries
 
-An AI Gateway with `retry_max_attempts` set retries inside your single HTTP request, and the package retries too. A late error can make the request several times longer, and your own timeout can cut it. Use one retry layer. If you use the gateway retry, set `retry` to `false` in the package config. See [Errors and retries](/guides/errors-and-retries/).
+An AI Gateway with `retry_max_attempts` set retries inside your single HTTP request, and the package retries too. A late error can then make the request several times longer, long enough for your own timeout to cut it off. Use one retry layer: if you want the gateway's retry, set `retry` to `false` in the package config. See [Errors and retries](/guides/errors-and-retries/).
