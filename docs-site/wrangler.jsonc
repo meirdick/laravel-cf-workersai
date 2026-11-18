@@ -2,8 +2,13 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "laravel-cf-workersai-docs",
   "compatibility_date": "2026-11-02",
+  "main": "worker.js",
   "assets": {
     "directory": "./.deploy",
-    "not_found_handling": "404-page"
-  }
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+    "run_worker_first": ["/api/event"]
+  },
+  // page views go to the shared dataset read by meirdick.com/stats/
+  "analytics_engine_datasets": [{ "binding": "EVENTS", "dataset": "meirdick_events" }]
 }
